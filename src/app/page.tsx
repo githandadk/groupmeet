@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { getUserTimezone, getTimezoneAbbr } from '@/lib/utils';
+import { getUserTimezone, getTimezoneAbbr, US_TIMEZONES } from '@/lib/utils';
 
 export default function Home() {
   const router = useRouter();
@@ -230,32 +230,7 @@ export default function Home() {
                 onChange={(e) => setTimezone(e.target.value)}
                 className="w-full px-3 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none text-base bg-white"
               >
-                {[
-                  'Pacific/Honolulu',
-                  'America/Anchorage',
-                  'America/Los_Angeles',
-                  'America/Denver',
-                  'America/Chicago',
-                  'America/New_York',
-                  'America/Halifax',
-                  'America/St_Johns',
-                  'America/Sao_Paulo',
-                  'Atlantic/Reykjavik',
-                  'Europe/London',
-                  'Europe/Paris',
-                  'Europe/Helsinki',
-                  'Europe/Moscow',
-                  'Asia/Dubai',
-                  'Asia/Karachi',
-                  'Asia/Kolkata',
-                  'Asia/Dhaka',
-                  'Asia/Bangkok',
-                  'Asia/Shanghai',
-                  'Asia/Tokyo',
-                  'Asia/Seoul',
-                  'Australia/Sydney',
-                  'Pacific/Auckland',
-                ].map((tz) => (
+                {US_TIMEZONES.map((tz) => (
                   <option key={tz} value={tz}>
                     {tz.replace(/_/g, ' ')} ({getTimezoneAbbr(tz)})
                   </option>

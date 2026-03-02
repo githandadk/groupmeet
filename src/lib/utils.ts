@@ -138,10 +138,22 @@ export function parseSlotKey(key: string): { date: string; minutes: number } {
 
 // ─── Timezone helpers ───
 
-/** Get the user's local IANA timezone */
+/** US timezones only */
+export const US_TIMEZONES = [
+  'Pacific/Honolulu',
+  'America/Anchorage',
+  'America/Los_Angeles',
+  'America/Denver',
+  'America/Chicago',
+  'America/New_York',
+] as const;
+
+/** Get the user's local IANA timezone, defaulting to New York if outside the US */
 export function getUserTimezone(): string {
   try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if ((US_TIMEZONES as readonly string[]).includes(tz)) return tz;
+    return 'America/New_York';
   } catch {
     return 'America/New_York';
   }
