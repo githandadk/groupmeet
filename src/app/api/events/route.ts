@@ -5,7 +5,7 @@ import { generateSlug, generateToken } from '@/lib/utils';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { name, description, dateStart, dateEnd, granularity, timeStart, timeEnd, organizerEmail } = body;
+    const { name, description, dateStart, dateEnd, granularity, timeStart, timeEnd, organizerEmail, timezone } = body;
 
     if (!name || !dateStart || !dateEnd) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
@@ -28,6 +28,7 @@ export async function POST(request: NextRequest) {
         time_start: timeStart ?? 8,
         time_end: timeEnd ?? 22,
         organizer_email: organizerEmail || null,
+        timezone: timezone || 'America/New_York',
       })
       .select()
       .single();

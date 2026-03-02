@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { getUserTimezone, getTimezoneAbbr } from '@/lib/utils';
 
 export default function Home() {
   const router = useRouter();
@@ -9,12 +10,17 @@ export default function Home() {
   const [description, setDescription] = useState('');
   const [dateStart, setDateStart] = useState('');
   const [dateEnd, setDateEnd] = useState('');
-  const [granularity, setGranularity] = useState<'hourly' | 'daily'>('hourly');
+  const [granularity, setGranularity] = useState<'hourly' | 'half-hour' | 'daily'>('hourly');
   const [timeStart, setTimeStart] = useState(8);
   const [timeEnd, setTimeEnd] = useState(22);
   const [organizerEmail, setOrganizerEmail] = useState('');
+  const [timezone, setTimezone] = useState('America/New_York');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    setTimezone(getUserTimezone());
+  }, []);
 
   const today = new Date().toISOString().split('T')[0];
   const maxDate = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
@@ -48,9 +54,10 @@ export default function Home() {
           dateStart,
           dateEnd,
           granularity,
-          timeStart: granularity === 'hourly' ? timeStart : 0,
-          timeEnd: granularity === 'hourly' ? timeEnd : 24,
+          timeStart: granularity !== 'daily' ? timeStart : 0,
+          timeEnd: granularity !== 'daily' ? timeEnd : 24,
           organizerEmail: organizerEmail.trim() || null,
+          timezone,
         }),
       });
 
@@ -146,32 +153,28 @@ export default function Home() {
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Time Granularity</label>
             <div className="flex rounded-xl overflow-hidden border border-gray-300">
-              <button
-                type="button"
-                onClick={() => setGranularity('hourly')}
-                className={`flex-1 py-3 text-sm font-medium transition-colors ${
-                  granularity === 'hourly'
-                    ? 'bg-indigo-500 text-white'
-                    : 'bg-white text-gray-700 hover:bg-gray-50'
-                }`}
-              >
-                1-Hour Slots
-              </button>
-              <button
-                type="button"
-                onClick={() => setGranularity('daily')}
-                className={`flex-1 py-3 text-sm font-medium transition-colors border-l border-gray-300 ${
-                  granularity === 'daily'
-                    ? 'bg-indigo-500 text-white'
-                    : 'bg-white text-gray-700 hover:bg-gray-50'
-                }`}
-              >
-                Full Day
-              </button>
+              {([['half-hour', '30-Min'], ['hourly', '1-Hour'], ['daily', 'Full Day']] as const).map(
+                ([value, label], i) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setGranularity(value)}
+                    className={`flex-1 py-3 text-sm font-medium transition-colors ${
+                      i > 0 ? 'border-l border-gray-300' : ''
+                    } ${
+                      granularity === value
+                        ? 'bg-indigo-500 text-white'
+                        : 'bg-white text-gray-700 hover:bg-gray-50'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                )
+              )}
             </div>
           </div>
 
-          {granularity === 'hourly' && (
+          {granularity !== 'daily' && (
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label htmlFor="timeStart" className="block text-sm font-medium text-gray-700 mb-1">
@@ -213,6 +216,51 @@ export default function Home() {
                   ))}
                 </select>
               </div>
+            </div>
+          )}
+
+          {granularity !== 'daily' && (
+            <div>
+              <label htmlFor="timezone" className="block text-sm font-medium text-gray-700 mb-1">
+                Timezone
+              </label>
+              <select
+                id="timezone"
+                value={timezone}
+                onChange={(e) => setTimezone(e.target.value)}
+                className="w-full px-3 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none text-base bg-white"
+              >
+                {[
+                  'Pacific/Honolulu',
+                  'America/Anchorage',
+                  'America/Los_Angeles',
+                  'America/Denver',
+                  'America/Chicago',
+                  'America/New_York',
+                  'America/Halifax',
+                  'America/St_Johns',
+                  'America/Sao_Paulo',
+                  'Atlantic/Reykjavik',
+                  'Europe/London',
+                  'Europe/Paris',
+                  'Europe/Helsinki',
+                  'Europe/Moscow',
+                  'Asia/Dubai',
+                  'Asia/Karachi',
+                  'Asia/Kolkata',
+                  'Asia/Dhaka',
+                  'Asia/Bangkok',
+                  'Asia/Shanghai',
+                  'Asia/Tokyo',
+                  'Asia/Seoul',
+                  'Australia/Sydney',
+                  'Pacific/Auckland',
+                ].map((tz) => (
+                  <option key={tz} value={tz}>
+                    {tz.replace(/_/g, ' ')} ({getTimezoneAbbr(tz)})
+                  </option>
+                ))}
+              </select>
             </div>
           )}
 

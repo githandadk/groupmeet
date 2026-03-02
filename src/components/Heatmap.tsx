@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo } from 'react';
-import { getDatesInRange, getTimeSlots, formatDate, formatTime } from '@/lib/utils';
+import { getDatesInRange, getTimeSlots, formatDate, formatMinutes, slotKey, granularityStepMinutes, utcToWallClock, getTimezoneAbbr } from '@/lib/utils';
 import type { Event, Availability, Participant } from '@/types/database';
 
 interface HeatmapProps {
@@ -21,7 +21,10 @@ interface SlotInfo {
 
 export default function Heatmap({ event, availability, participants, onSelectSlot }: HeatmapProps) {
   const dates = getDatesInRange(event.date_range_start, event.date_range_end);
-  const hours = event.granularity === 'hourly' ? getTimeSlots(event.time_start ?? 8, event.time_end ?? 22) : [];
+  const step = granularityStepMinutes(event.granularity);
+  const timeSlots = event.granularity !== 'daily'
+    ? getTimeSlots(event.time_start ?? 8, event.time_end ?? 22, step)
+    : [];
   const totalParticipants = participants.length;
 
   const participantMap = useMemo(() => {
@@ -36,15 +39,14 @@ export default function Heatmap({ event, availability, participants, onSelectSlo
     const data: Record<string, SlotInfo> = {};
 
     availability.forEach((a) => {
-      const dt = new Date(a.slot_start);
-      const dateStr = dt.toISOString().split('T')[0];
       let key: string;
 
       if (event.granularity === 'daily') {
-        key = dateStr;
+        const dt = new Date(a.slot_start);
+        key = dt.toISOString().split('T')[0];
       } else {
-        const hour = dt.getUTCHours();
-        key = `${dateStr}T${String(hour).padStart(2, '0')}`;
+        const wc = utcToWallClock(a.slot_start, event.timezone);
+        key = slotKey(wc.date, wc.minutes);
       }
 
       if (!data[key]) {
@@ -64,7 +66,7 @@ export default function Heatmap({ event, availability, participants, onSelectSlo
     });
 
     return data;
-  }, [availability, event.granularity, participantMap]);
+  }, [availability, event.granularity, event.timezone, participantMap]);
 
   const rankedSlots = useMemo(() => {
     return Object.values(slotData)
@@ -90,19 +92,19 @@ export default function Heatmap({ event, availability, participants, onSelectSlo
   }
 
   function formatSlotTime(slotStart: string, _slotEnd: string): string {
-    const start = new Date(slotStart);
     if (event.granularity === 'daily') {
+      const start = new Date(slotStart);
       return formatDate(start.toISOString().split('T')[0]);
     }
-    const day = formatDate(start.toISOString().split('T')[0]);
-    const time = formatTime(start.getUTCHours());
+    const wc = utcToWallClock(slotStart, event.timezone);
+    const day = formatDate(wc.date);
+    const time = formatMinutes(wc.minutes);
     return `${day} ${time}`;
   }
 
   if (event.granularity === 'daily') {
     return (
       <div className="space-y-6">
-        {/* Daily grid */}
         <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
           {dates.map((date) => {
             const key = date;
@@ -137,14 +139,18 @@ export default function Heatmap({ event, availability, participants, onSelectSlo
     );
   }
 
+  const cellHeight = step === 30 ? 'h-8' : 'h-10';
+
   return (
     <div className="space-y-6">
-      {/* Hourly grid */}
+      <p className="text-xs text-gray-400 text-right">
+        {getTimezoneAbbr(event.timezone)}
+      </p>
       <div className="overflow-x-auto -mx-4 px-4">
         <div
           className="grid"
           style={{
-            gridTemplateColumns: `48px repeat(${dates.length}, minmax(60px, 1fr))`,
+            gridTemplateColumns: `56px repeat(${dates.length}, minmax(60px, 1fr))`,
           }}
         >
           {/* Header */}
@@ -161,30 +167,35 @@ export default function Heatmap({ event, availability, participants, onSelectSlo
           ))}
 
           {/* Rows */}
-          {hours.map((hour) => (
-            <>
-              <div key={`label-${hour}`} className="h-10 flex items-center justify-end pr-2 text-xs text-gray-400">
-                {formatTime(hour)}
-              </div>
-              {dates.map((date) => {
-                const key = `${date}T${String(hour).padStart(2, '0')}`;
-                const info = slotData[key];
-                const count = info?.count || 0;
-                return (
-                  <div
-                    key={key}
-                    onClick={() => info && onSelectSlot?.(info.slotStart, info.slotEnd)}
-                    className={`h-10 border border-gray-100 flex items-center justify-center text-xs font-medium transition-colors ${getCellColor(count)} ${getTextColor(count)} ${
-                      onSelectSlot && count > 0 ? 'cursor-pointer hover:ring-1 hover:ring-indigo-400' : ''
-                    }`}
-                    title={info ? `${count}/${totalParticipants}: ${info.names.join(', ')}` : 'No one available'}
-                  >
-                    {count > 0 ? count : ''}
-                  </div>
-                );
-              })}
-            </>
-          ))}
+          {timeSlots.map((mins) => {
+            const isHourBoundary = mins % 60 === 0;
+            return (
+              <>
+                <div key={`label-${mins}`} className={`${cellHeight} flex items-center justify-end pr-2 text-xs text-gray-400`}>
+                  {isHourBoundary || step >= 60 ? formatMinutes(mins) : ''}
+                </div>
+                {dates.map((date) => {
+                  const key = slotKey(date, mins);
+                  const info = slotData[key];
+                  const count = info?.count || 0;
+                  return (
+                    <div
+                      key={key}
+                      onClick={() => info && onSelectSlot?.(info.slotStart, info.slotEnd)}
+                      className={`${cellHeight} border border-gray-100 ${
+                        isHourBoundary ? 'border-t-gray-200' : ''
+                      } flex items-center justify-center text-xs font-medium transition-colors ${getCellColor(count)} ${getTextColor(count)} ${
+                        onSelectSlot && count > 0 ? 'cursor-pointer hover:ring-1 hover:ring-indigo-400' : ''
+                      }`}
+                      title={info ? `${count}/${totalParticipants}: ${info.names.join(', ')}` : 'No one available'}
+                    >
+                      {count > 0 ? count : ''}
+                    </div>
+                  );
+                })}
+              </>
+            );
+          })}
         </div>
       </div>
 

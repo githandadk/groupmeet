@@ -66,6 +66,7 @@ export type Database = {
           slug: string
           time_end: number | null
           time_start: number | null
+          timezone: string
         }
         Insert: {
           admin_token: string
@@ -81,6 +82,7 @@ export type Database = {
           slug: string
           time_end?: number | null
           time_start?: number | null
+          timezone?: string
         }
         Update: {
           admin_token?: string
@@ -96,6 +98,7 @@ export type Database = {
           slug?: string
           time_end?: number | null
           time_start?: number | null
+          timezone?: string
         }
         Relationships: []
       }

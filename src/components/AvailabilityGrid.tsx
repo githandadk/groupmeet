@@ -1,22 +1,17 @@
 'use client';
 
-import { useState, useRef, useCallback, useEffect } from 'react';
-import { getDatesInRange, getTimeSlots, formatDate, formatTime } from '@/lib/utils';
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
+import { getDatesInRange, getTimeSlots, formatDate, formatMinutes, slotKey, parseSlotKey, granularityStepMinutes } from '@/lib/utils';
 
 interface AvailabilityGridProps {
   dateStart: string;
   dateEnd: string;
-  granularity: 'hourly' | 'daily';
+  granularity: string;
   timeStart: number;
   timeEnd: number;
   selectedSlots: Set<string>;
   onSlotsChange: (slots: Set<string>) => void;
   readOnly?: boolean;
-}
-
-function slotKey(date: string, hour?: number): string {
-  if (hour !== undefined) return `${date}T${String(hour).padStart(2, '0')}`;
-  return date;
 }
 
 export default function AvailabilityGrid({
@@ -29,8 +24,12 @@ export default function AvailabilityGrid({
   onSlotsChange,
   readOnly = false,
 }: AvailabilityGridProps) {
-  const dates = getDatesInRange(dateStart, dateEnd);
-  const hours = granularity === 'hourly' ? getTimeSlots(timeStart, timeEnd) : [];
+  const dates = useMemo(() => getDatesInRange(dateStart, dateEnd), [dateStart, dateEnd]);
+  const step = granularityStepMinutes(granularity);
+  const timeSlots = useMemo(
+    () => (granularity !== 'daily' ? getTimeSlots(timeStart, timeEnd, step) : []),
+    [granularity, timeStart, timeEnd, step]
+  );
 
   const [isSelecting, setIsSelecting] = useState(false);
   const [selectMode, setSelectMode] = useState<'add' | 'remove'>('add');
@@ -78,7 +77,6 @@ export default function AvailabilityGrid({
 
       const key = getCellFromPoint(e.clientX, e.clientY);
       if (key && startCellRef.current) {
-        // Calculate rectangle selection between start and current
         const startKey = startCellRef.current;
         const newDragged = new Set<string>();
 
@@ -93,22 +91,28 @@ export default function AvailabilityGrid({
             }
           }
         } else {
-          const [startDate, startHourStr] = startKey.split('T');
-          const [endDate, endHourStr] = key.split('T');
-          const startDayIdx = dates.indexOf(startDate);
-          const endDayIdx = dates.indexOf(endDate);
-          const startHour = parseInt(startHourStr);
-          const endHour = parseInt(endHourStr);
+          const startParsed = parseSlotKey(startKey);
+          const endParsed = parseSlotKey(key);
+          const startDayIdx = dates.indexOf(startParsed.date);
+          const endDayIdx = dates.indexOf(endParsed.date);
 
           if (startDayIdx !== -1 && endDayIdx !== -1) {
             const loDay = Math.min(startDayIdx, endDayIdx);
             const hiDay = Math.max(startDayIdx, endDayIdx);
-            const loHour = Math.min(startHour, endHour);
-            const hiHour = Math.max(startHour, endHour);
+            const loSlotIdx = Math.min(
+              timeSlots.indexOf(startParsed.minutes),
+              timeSlots.indexOf(endParsed.minutes)
+            );
+            const hiSlotIdx = Math.max(
+              timeSlots.indexOf(startParsed.minutes),
+              timeSlots.indexOf(endParsed.minutes)
+            );
 
-            for (let d = loDay; d <= hiDay; d++) {
-              for (let h = loHour; h <= hiHour; h++) {
-                newDragged.add(slotKey(dates[d], h));
+            if (loSlotIdx !== -1 && hiSlotIdx !== -1) {
+              for (let d = loDay; d <= hiDay; d++) {
+                for (let s = loSlotIdx; s <= hiSlotIdx; s++) {
+                  newDragged.add(slotKey(dates[d], timeSlots[s]));
+                }
               }
             }
           }
@@ -117,7 +121,7 @@ export default function AvailabilityGrid({
         setDraggedCells(newDragged);
       }
     },
-    [isSelecting, readOnly, getCellFromPoint, dates, granularity]
+    [isSelecting, readOnly, getCellFromPoint, dates, granularity, timeSlots]
   );
 
   const handlePointerUp = useCallback(() => {
@@ -137,7 +141,6 @@ export default function AvailabilityGrid({
     startCellRef.current = null;
   }, [isSelecting, readOnly, selectedSlots, draggedCells, selectMode, onSlotsChange]);
 
-  // Cancel selection on pointer leave
   useEffect(() => {
     const handleGlobalUp = () => {
       if (isSelecting) {
@@ -187,6 +190,9 @@ export default function AvailabilityGrid({
     );
   }
 
+  const cellHeight = step === 30 ? 'h-8' : 'h-12';
+  const cellMinHeight = step === 30 ? '32px' : '48px';
+
   return (
     <div className="space-y-2">
       {/* Day navigation */}
@@ -223,7 +229,7 @@ export default function AvailabilityGrid({
         <div className="flex gap-1 justify-center mb-2">
           {dates.map((date, i) => {
             const isVisible = i >= dayOffset && i < dayOffset + visibleDays;
-            const hasSelection = hours.some((h) => selectedSlots.has(slotKey(date, h)));
+            const hasSelection = timeSlots.some((m) => selectedSlots.has(slotKey(date, m)));
             return (
               <button
                 key={date}
@@ -243,7 +249,7 @@ export default function AvailabilityGrid({
         ref={gridRef}
         className="grid select-none"
         style={{
-          gridTemplateColumns: `48px repeat(${visibleDates.length}, 1fr)`,
+          gridTemplateColumns: `56px repeat(${visibleDates.length}, 1fr)`,
           touchAction: 'none',
           userSelect: 'none',
         }}
@@ -263,31 +269,37 @@ export default function AvailabilityGrid({
         ))}
 
         {/* Time rows */}
-        {hours.map((hour) => (
-          <>
-            <div
-              key={`label-${hour}`}
-              className="h-12 flex items-center justify-end pr-2 text-xs text-gray-400"
-            >
-              {formatTime(hour)}
-            </div>
-            {visibleDates.map((date) => {
-              const key = slotKey(date, hour);
-              const selected = isCellSelected(key);
-              return (
-                <div
-                  key={key}
-                  data-slot={key}
-                  onPointerDown={(e) => handlePointerDown(e, key)}
-                  className={`h-12 border border-gray-100 transition-colors ${
-                    selected ? 'bg-indigo-500' : 'bg-white hover:bg-indigo-50'
-                  } ${readOnly ? 'cursor-default' : 'cursor-pointer'}`}
-                  style={{ touchAction: 'none', userSelect: 'none', minHeight: '48px' }}
-                />
-              );
-            })}
-          </>
-        ))}
+        {timeSlots.map((mins) => {
+          const key_prefix = mins;
+          const isHourBoundary = mins % 60 === 0;
+          return (
+            <>
+              <div
+                key={`label-${key_prefix}`}
+                className={`${cellHeight} flex items-center justify-end pr-2 text-xs text-gray-400`}
+              >
+                {isHourBoundary || step >= 60 ? formatMinutes(mins) : ''}
+              </div>
+              {visibleDates.map((date) => {
+                const key = slotKey(date, mins);
+                const selected = isCellSelected(key);
+                return (
+                  <div
+                    key={key}
+                    data-slot={key}
+                    onPointerDown={(e) => handlePointerDown(e, key)}
+                    className={`${cellHeight} border border-gray-100 transition-colors ${
+                      isHourBoundary ? 'border-t-gray-200' : ''
+                    } ${
+                      selected ? 'bg-indigo-500' : 'bg-white hover:bg-indigo-50'
+                    } ${readOnly ? 'cursor-default' : 'cursor-pointer'}`}
+                    style={{ touchAction: 'none', userSelect: 'none', minHeight: cellMinHeight }}
+                  />
+                );
+              })}
+            </>
+          );
+        })}
       </div>
     </div>
   );

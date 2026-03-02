@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase/client';
 import AvailabilityGrid from '@/components/AvailabilityGrid';
+import { slotKey, granularityStepMinutes, wallClockToUTC, utcToWallClock, getTimezoneAbbr } from '@/lib/utils';
 import type { Event } from '@/types/database';
 
 export default function EventPage() {
@@ -20,7 +21,7 @@ export default function EventPage() {
   const [error, setError] = useState('');
   const [existingParticipantId, setExistingParticipantId] = useState<string | null>(null);
 
-  const loadExistingAvailability = useCallback(async (eventId: string, participantId: string) => {
+  const loadExistingAvailability = useCallback(async (eventId: string, participantId: string, eventTimezone: string, eventGranularity: string) => {
     const { data: slots } = await supabase
       .from('availability')
       .select('slot_start')
@@ -30,10 +31,13 @@ export default function EventPage() {
     if (slots && slots.length > 0) {
       const existing = new Set<string>();
       slots.forEach((s) => {
-        const dt = new Date(s.slot_start);
-        const dateStr = dt.toISOString().split('T')[0];
-        const hour = dt.getUTCHours();
-        existing.add(`${dateStr}T${String(hour).padStart(2, '0')}`);
+        if (eventGranularity === 'daily') {
+          const dt = new Date(s.slot_start);
+          existing.add(dt.toISOString().split('T')[0]);
+        } else {
+          const wc = utcToWallClock(s.slot_start, eventTimezone);
+          existing.add(slotKey(wc.date, wc.minutes));
+        }
       });
       setSelectedSlots(existing);
       setSubmitted(true);
@@ -71,7 +75,7 @@ export default function EventPage() {
           setName(participant.name);
           setEmail(participant.email || '');
           setExistingParticipantId(participant.id);
-          loadExistingAvailability(data.id, participant.id);
+          loadExistingAvailability(data.id, participant.id, data.timezone, data.granularity);
         }
       }
     }
@@ -130,6 +134,7 @@ export default function EventPage() {
       }
 
       // Insert availability slots
+      const step = granularityStepMinutes(event.granularity);
       const slots = Array.from(selectedSlots).map((key) => {
         let slotStart: string;
         let slotEnd: string;
@@ -138,10 +143,12 @@ export default function EventPage() {
           slotStart = new Date(key + 'T00:00:00Z').toISOString();
           slotEnd = new Date(key + 'T23:59:59Z').toISOString();
         } else {
-          const [date, hourStr] = key.split('T');
-          const hour = parseInt(hourStr);
-          slotStart = new Date(`${date}T${String(hour).padStart(2, '0')}:00:00Z`).toISOString();
-          slotEnd = new Date(`${date}T${String(hour + 1).padStart(2, '0')}:00:00Z`).toISOString();
+          const [date, timeStr] = key.split('T');
+          const [h, m] = timeStr.split(':').map(Number);
+          const startMins = h * 60 + (m || 0);
+          const endMins = startMins + step;
+          slotStart = wallClockToUTC(date, startMins, event.timezone);
+          slotEnd = wallClockToUTC(date, endMins, event.timezone);
         }
 
         return {
@@ -200,10 +207,20 @@ export default function EventPage() {
     <main className="min-h-screen pb-8">
       {/* Header */}
       <div className="bg-white border-b border-gray-200 px-4 py-4">
-        <h1 className="text-xl font-bold text-gray-900">{event.name}</h1>
-        {event.description && (
-          <p className="text-sm text-gray-500 mt-1">{event.description}</p>
-        )}
+        <div className="flex items-start justify-between">
+          <div>
+            <h1 className="text-xl font-bold text-gray-900">{event.name}</h1>
+            {event.description && (
+              <p className="text-sm text-gray-500 mt-1">{event.description}</p>
+            )}
+          </div>
+          <a
+            href={`/event/${slug}/results`}
+            className="text-sm text-indigo-500 font-medium hover:text-indigo-600 whitespace-nowrap ml-4 mt-1"
+          >
+            View Results
+          </a>
+        </div>
       </div>
 
       <div className="px-4 py-4 max-w-lg mx-auto">
@@ -230,6 +247,11 @@ export default function EventPage() {
               ? 'Tap the days you\'re available'
               : 'Tap or drag to select the times you\'re available'}
           </p>
+          {event.granularity !== 'daily' && (
+            <p className="text-xs text-indigo-500 mt-1">
+              Times shown in {event.timezone.replace(/_/g, ' ')} ({getTimezoneAbbr(event.timezone)})
+            </p>
+          )}
         </div>
 
         {/* Grid */}
@@ -237,7 +259,7 @@ export default function EventPage() {
           <AvailabilityGrid
             dateStart={event.date_range_start}
             dateEnd={event.date_range_end}
-            granularity={event.granularity as 'hourly' | 'daily'}
+            granularity={event.granularity}
             timeStart={event.time_start ?? 8}
             timeEnd={event.time_end ?? 22}
             selectedSlots={selectedSlots}

@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase/client';
 import Heatmap from '@/components/Heatmap';
+import { formatUTCInTimezone, getTimezoneAbbr } from '@/lib/utils';
 import type { Event, Availability, Participant } from '@/types/database';
 
 export default function ResultsPage() {
@@ -119,17 +120,17 @@ export default function ResultsPage() {
             Time selected by organizer:
           </p>
           <p className="text-green-700 font-bold mt-1">
-            {new Date(selectedSlot.start).toLocaleDateString('en-US', {
-              weekday: 'long',
-              month: 'long',
-              day: 'numeric',
-            })}{' '}
-            {event.granularity === 'hourly' &&
-              `at ${new Date(selectedSlot.start).toLocaleTimeString('en-US', {
-                hour: 'numeric',
-                minute: '2-digit',
-              })}`}
+            {event.granularity === 'daily'
+              ? new Date(selectedSlot.start).toLocaleDateString('en-US', {
+                  weekday: 'long',
+                  month: 'long',
+                  day: 'numeric',
+                })
+              : formatUTCInTimezone(selectedSlot.start, event.timezone)}
           </p>
+          {event.granularity !== 'daily' && (
+            <p className="text-xs text-green-600 mt-1">{getTimezoneAbbr(event.timezone)}</p>
+          )}
         </div>
       )}
 
