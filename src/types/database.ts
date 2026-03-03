@@ -137,6 +137,122 @@ export type Database = {
           },
         ]
       }
+      signups: {
+        Row: {
+          id: string
+          slug: string
+          admin_token: string
+          name: string
+          description: string | null
+          type: 'timeslot' | 'potluck'
+          organizer_email: string | null
+          created_at: string | null
+        }
+        Insert: {
+          id?: string
+          slug: string
+          admin_token: string
+          name: string
+          description?: string | null
+          type?: 'timeslot' | 'potluck'
+          organizer_email?: string | null
+          created_at?: string | null
+        }
+        Update: {
+          id?: string
+          slug?: string
+          admin_token?: string
+          name?: string
+          description?: string | null
+          type?: 'timeslot' | 'potluck'
+          organizer_email?: string | null
+          created_at?: string | null
+        }
+        Relationships: []
+      }
+      signup_items: {
+        Row: {
+          id: string
+          signup_id: string
+          label: string
+          description: string | null
+          capacity: number
+          sort_order: number
+          date: string | null
+        }
+        Insert: {
+          id?: string
+          signup_id: string
+          label: string
+          description?: string | null
+          capacity?: number
+          sort_order?: number
+          date?: string | null
+        }
+        Update: {
+          id?: string
+          signup_id?: string
+          label?: string
+          description?: string | null
+          capacity?: number
+          sort_order?: number
+          date?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "signup_items_signup_id_fkey"
+            columns: ["signup_id"]
+            isOneToOne: false
+            referencedRelation: "signups"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      signup_claims: {
+        Row: {
+          id: string
+          item_id: string
+          signup_id: string
+          participant_name: string
+          participant_email: string | null
+          session_token: string
+          created_at: string | null
+        }
+        Insert: {
+          id?: string
+          item_id: string
+          signup_id: string
+          participant_name: string
+          participant_email?: string | null
+          session_token: string
+          created_at?: string | null
+        }
+        Update: {
+          id?: string
+          item_id?: string
+          signup_id?: string
+          participant_name?: string
+          participant_email?: string | null
+          session_token?: string
+          created_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "signup_claims_item_id_fkey"
+            columns: ["item_id"]
+            isOneToOne: false
+            referencedRelation: "signup_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "signup_claims_signup_id_fkey"
+            columns: ["signup_id"]
+            isOneToOne: false
+            referencedRelation: "signups"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
@@ -156,3 +272,6 @@ export type Database = {
 export type Event = Database['public']['Tables']['events']['Row'];
 export type Participant = Database['public']['Tables']['participants']['Row'];
 export type Availability = Database['public']['Tables']['availability']['Row'];
+export type Signup = Database['public']['Tables']['signups']['Row'];
+export type SignupItem = Database['public']['Tables']['signup_items']['Row'];
+export type SignupClaim = Database['public']['Tables']['signup_claims']['Row'];

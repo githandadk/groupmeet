@@ -63,5 +63,48 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
+  if (body.action === 'list_signups') {
+    const { data, error } = await supabase
+      .from('signups')
+      .select('id, slug, admin_token, name, type, organizer_email, created_at')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    const signupIds = (data || []).map((s) => s.id);
+    const { data: claimsData } = await supabase
+      .from('signup_claims')
+      .select('signup_id')
+      .in('signup_id', signupIds);
+
+    const claimCounts: Record<string, number> = {};
+    claimsData?.forEach((c) => {
+      claimCounts[c.signup_id] = (claimCounts[c.signup_id] || 0) + 1;
+    });
+
+    const signups = (data || []).map((s) => ({
+      ...s,
+      claim_count: claimCounts[s.id] || 0,
+    }));
+
+    return NextResponse.json({ signups });
+  }
+
+  if (body.action === 'delete_signup') {
+    const { signupId } = body;
+    if (!signupId) {
+      return NextResponse.json({ error: 'Missing signupId' }, { status: 400 });
+    }
+
+    const { error } = await supabase.from('signups').delete().eq('id', signupId);
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ ok: true });
+  }
+
   return NextResponse.json({ error: 'Unknown action' }, { status: 400 });
 }

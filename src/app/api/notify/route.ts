@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createSupabaseAdmin } from '@/lib/supabase/server';
-import { sendNewResponseEmail, sendTimeSelectedEmail } from '@/lib/email';
+import { sendNewResponseEmail, sendTimeSelectedEmail, sendNewClaimEmail } from '@/lib/email';
 
 export async function POST(request: NextRequest) {
   try {
@@ -78,6 +78,54 @@ export async function POST(request: NextRequest) {
       }
 
       return NextResponse.json({ ok: true, sent: emails.size - failed });
+    }
+
+    if (body.type === 'new_signup_claim') {
+      const { signupId, participantName } = body;
+
+      const { data: signup } = await supabaseAdmin
+        .from('signups')
+        .select('*')
+        .eq('id', signupId)
+        .single();
+
+      if (!signup?.organizer_email) {
+        return NextResponse.json({ ok: true });
+      }
+
+      // Find the most recent claim by this participant to get the item label
+      const { data: recentClaim } = await supabaseAdmin
+        .from('signup_claims')
+        .select('item_id')
+        .eq('signup_id', signupId)
+        .eq('participant_name', participantName)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+
+      let itemLabel = 'an item';
+      if (recentClaim) {
+        const { data: item } = await supabaseAdmin
+          .from('signup_items')
+          .select('label')
+          .eq('id', recentClaim.item_id)
+          .single();
+        if (item) itemLabel = item.label;
+      }
+
+      try {
+        await sendNewClaimEmail(
+          signup.organizer_email,
+          signup.name,
+          participantName,
+          itemLabel,
+          signup.slug
+        );
+      } catch (emailError) {
+        console.error('Email send failed:', emailError);
+      }
+
+      return NextResponse.json({ ok: true });
     }
 
     return NextResponse.json({ error: 'Unknown notification type' }, { status: 400 });

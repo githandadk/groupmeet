@@ -16,38 +16,58 @@ interface EventInfo {
   participant_count: number;
 }
 
+interface SignupInfo {
+  id: string;
+  slug: string;
+  admin_token: string;
+  name: string;
+  type: 'timeslot' | 'potluck';
+  organizer_email: string | null;
+  created_at: string | null;
+  claim_count: number;
+}
+
 export default function SuperAdminPage() {
   const [password, setPassword] = useState('');
   const [authenticated, setAuthenticated] = useState(false);
   const [events, setEvents] = useState<EventInfo[]>([]);
+  const [signups, setSignups] = useState<SignupInfo[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [tab, setTab] = useState<'events' | 'signups'>('events');
 
-  const loadEvents = useCallback(async (pw: string) => {
+  const loadAll = useCallback(async (pw: string) => {
     setLoading(true);
     setError('');
     try {
-      const res = await fetch('/api/superadmin', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-admin-password': pw,
-        },
-        body: JSON.stringify({ action: 'list' }),
-      });
+      const [eventsRes, signupsRes] = await Promise.all([
+        fetch('/api/superadmin', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-admin-password': pw },
+          body: JSON.stringify({ action: 'list' }),
+        }),
+        fetch('/api/superadmin', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-admin-password': pw },
+          body: JSON.stringify({ action: 'list_signups' }),
+        }),
+      ]);
 
-      if (res.status === 401) {
+      if (eventsRes.status === 401) {
         setError('Invalid password');
         setAuthenticated(false);
         setLoading(false);
         return;
       }
 
-      const data = await res.json();
-      if (data.error) throw new Error(data.error);
+      const eventsData = await eventsRes.json();
+      const signupsData = await signupsRes.json();
 
-      setEvents(data.events);
+      if (eventsData.error) throw new Error(eventsData.error);
+
+      setEvents(eventsData.events || []);
+      setSignups(signupsData.signups || []);
       setAuthenticated(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load');
@@ -60,35 +80,50 @@ export default function SuperAdminPage() {
     const saved = sessionStorage.getItem('sa_pw');
     if (saved) {
       setPassword(saved);
-      loadEvents(saved);
+      loadAll(saved);
     }
-  }, [loadEvents]);
+  }, [loadAll]);
 
   function handleLogin(e: React.FormEvent) {
     e.preventDefault();
     if (!password.trim()) return;
     sessionStorage.setItem('sa_pw', password);
-    loadEvents(password);
+    loadAll(password);
   }
 
-  async function handleDelete(eventId: string, eventName: string) {
+  async function handleDeleteEvent(eventId: string, eventName: string) {
     if (!confirm(`Delete "${eventName}" and all its data? This cannot be undone.`)) return;
 
     setDeleting(eventId);
     try {
       const res = await fetch('/api/superadmin', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-admin-password': password,
-        },
+        headers: { 'Content-Type': 'application/json', 'x-admin-password': password },
         body: JSON.stringify({ action: 'delete', eventId }),
       });
-
       const data = await res.json();
       if (data.error) throw new Error(data.error);
-
       setEvents((prev) => prev.filter((e) => e.id !== eventId));
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Delete failed');
+    } finally {
+      setDeleting(null);
+    }
+  }
+
+  async function handleDeleteSignup(signupId: string, signupName: string) {
+    if (!confirm(`Delete "${signupName}" and all its data? This cannot be undone.`)) return;
+
+    setDeleting(signupId);
+    try {
+      const res = await fetch('/api/superadmin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-admin-password': password },
+        body: JSON.stringify({ action: 'delete_signup', signupId }),
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      setSignups((prev) => prev.filter((s) => s.id !== signupId));
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Delete failed');
     } finally {
@@ -131,15 +166,19 @@ export default function SuperAdminPage() {
     );
   }
 
+  const appUrl = typeof window !== 'undefined' ? window.location.origin : '';
+
   return (
     <main className="min-h-screen pb-8">
       <div className="bg-white border-b border-gray-200 px-4 py-4 flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-gray-900">Super Admin</h1>
-          <p className="text-sm text-gray-500">{events.length} event{events.length !== 1 ? 's' : ''}</p>
+          <p className="text-sm text-gray-500">
+            {events.length} event{events.length !== 1 ? 's' : ''}, {signups.length} sign-up{signups.length !== 1 ? 's' : ''}
+          </p>
         </div>
         <button
-          onClick={() => loadEvents(password)}
+          onClick={() => loadAll(password)}
           disabled={loading}
           className="px-4 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors disabled:opacity-50"
         >
@@ -147,80 +186,126 @@ export default function SuperAdminPage() {
         </button>
       </div>
 
-      <div className="px-4 py-4 max-w-3xl mx-auto space-y-3">
-        {events.length === 0 && (
-          <p className="text-center text-gray-400 py-8">No events yet.</p>
-        )}
+      {/* Tabs */}
+      <div className="px-4 max-w-3xl mx-auto">
+        <div className="flex border-b border-gray-200 mt-4 mb-4">
+          <button
+            onClick={() => setTab('events')}
+            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+              tab === 'events'
+                ? 'border-indigo-500 text-indigo-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            Events ({events.length})
+          </button>
+          <button
+            onClick={() => setTab('signups')}
+            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+              tab === 'signups'
+                ? 'border-indigo-500 text-indigo-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            Sign-Ups ({signups.length})
+          </button>
+        </div>
 
-        {events.map((event) => {
-          const status = getStatus(event);
-          const appUrl = typeof window !== 'undefined' ? window.location.origin : '';
-
-          return (
-            <div
-              key={event.id}
-              className="bg-white rounded-xl border border-gray-200 p-4"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <h2 className="font-semibold text-gray-900 truncate">{event.name}</h2>
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${status.color}`}>
-                      {status.label}
-                    </span>
-                  </div>
-
-                  <div className="mt-1 text-sm text-gray-500">
-                    {event.date_range_start} to {event.date_range_end}
-                    <span className="mx-2 text-gray-300">|</span>
-                    {event.granularity}
-                    <span className="mx-2 text-gray-300">|</span>
-                    {event.participant_count} participant{event.participant_count !== 1 ? 's' : ''}
-                  </div>
-
-                  {event.organizer_email && (
-                    <p className="text-xs text-gray-400 mt-1">{event.organizer_email}</p>
-                  )}
-
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    <a
-                      href={`${appUrl}/event/${event.slug}/admin?token=${event.admin_token}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-xs text-indigo-500 hover:text-indigo-600 font-medium"
+        {/* Events tab */}
+        {tab === 'events' && (
+          <div className="space-y-3">
+            {events.length === 0 && (
+              <p className="text-center text-gray-400 py-8">No events yet.</p>
+            )}
+            {events.map((event) => {
+              const status = getStatus(event);
+              return (
+                <div key={event.id} className="bg-white rounded-xl border border-gray-200 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h2 className="font-semibold text-gray-900 truncate">{event.name}</h2>
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${status.color}`}>
+                          {status.label}
+                        </span>
+                      </div>
+                      <div className="mt-1 text-sm text-gray-500">
+                        {event.date_range_start} to {event.date_range_end}
+                        <span className="mx-2 text-gray-300">|</span>
+                        {event.granularity}
+                        <span className="mx-2 text-gray-300">|</span>
+                        {event.participant_count} participant{event.participant_count !== 1 ? 's' : ''}
+                      </div>
+                      {event.organizer_email && (
+                        <p className="text-xs text-gray-400 mt-1">{event.organizer_email}</p>
+                      )}
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <a href={`${appUrl}/event/${event.slug}/admin?token=${event.admin_token}`} target="_blank" rel="noopener noreferrer" className="text-xs text-indigo-500 hover:text-indigo-600 font-medium">Admin Link</a>
+                        <a href={`${appUrl}/event/${event.slug}`} target="_blank" rel="noopener noreferrer" className="text-xs text-gray-500 hover:text-gray-600 font-medium">Participant Link</a>
+                        <a href={`${appUrl}/event/${event.slug}/results`} target="_blank" rel="noopener noreferrer" className="text-xs text-gray-500 hover:text-gray-600 font-medium">Results</a>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => handleDeleteEvent(event.id, event.name)}
+                      disabled={deleting === event.id}
+                      className="px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 border border-red-200 rounded-lg transition-colors disabled:opacity-50 flex-shrink-0"
                     >
-                      Admin Link
-                    </a>
-                    <a
-                      href={`${appUrl}/event/${event.slug}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-xs text-gray-500 hover:text-gray-600 font-medium"
-                    >
-                      Participant Link
-                    </a>
-                    <a
-                      href={`${appUrl}/event/${event.slug}/results`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-xs text-gray-500 hover:text-gray-600 font-medium"
-                    >
-                      Results
-                    </a>
+                      {deleting === event.id ? 'Deleting...' : 'Delete'}
+                    </button>
                   </div>
                 </div>
+              );
+            })}
+          </div>
+        )}
 
-                <button
-                  onClick={() => handleDelete(event.id, event.name)}
-                  disabled={deleting === event.id}
-                  className="px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 border border-red-200 rounded-lg transition-colors disabled:opacity-50 flex-shrink-0"
-                >
-                  {deleting === event.id ? 'Deleting...' : 'Delete'}
-                </button>
+        {/* Sign-ups tab */}
+        {tab === 'signups' && (
+          <div className="space-y-3">
+            {signups.length === 0 && (
+              <p className="text-center text-gray-400 py-8">No sign-ups yet.</p>
+            )}
+            {signups.map((signup) => (
+              <div key={signup.id} className="bg-white rounded-xl border border-gray-200 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h2 className="font-semibold text-gray-900 truncate">{signup.name}</h2>
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                        signup.type === 'potluck' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'
+                      }`}>
+                        {signup.type === 'potluck' ? 'Potluck' : 'Sign-Up'}
+                      </span>
+                    </div>
+                    <div className="mt-1 text-sm text-gray-500">
+                      {signup.claim_count} claim{signup.claim_count !== 1 ? 's' : ''}
+                      {signup.created_at && (
+                        <>
+                          <span className="mx-2 text-gray-300">|</span>
+                          Created {new Date(signup.created_at).toLocaleDateString()}
+                        </>
+                      )}
+                    </div>
+                    {signup.organizer_email && (
+                      <p className="text-xs text-gray-400 mt-1">{signup.organizer_email}</p>
+                    )}
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <a href={`${appUrl}/signup/${signup.slug}/admin?token=${signup.admin_token}`} target="_blank" rel="noopener noreferrer" className="text-xs text-indigo-500 hover:text-indigo-600 font-medium">Admin Link</a>
+                      <a href={`${appUrl}/signup/${signup.slug}`} target="_blank" rel="noopener noreferrer" className="text-xs text-gray-500 hover:text-gray-600 font-medium">Participant Link</a>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => handleDeleteSignup(signup.id, signup.name)}
+                    disabled={deleting === signup.id}
+                    className="px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 border border-red-200 rounded-lg transition-colors disabled:opacity-50 flex-shrink-0"
+                  >
+                    {deleting === signup.id ? 'Deleting...' : 'Delete'}
+                  </button>
+                </div>
               </div>
-            </div>
-          );
-        })}
+            ))}
+          </div>
+        )}
       </div>
     </main>
   );

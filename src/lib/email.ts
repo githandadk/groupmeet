@@ -86,3 +86,29 @@ export async function sendTimeSelectedEmail(
     ],
   });
 }
+
+export async function sendNewClaimEmail(
+  organizerEmail: string,
+  signupName: string,
+  participantName: string,
+  itemLabel: string,
+  signupSlug: string
+) {
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+
+  await transporter.sendMail({
+    from: `${FROM_NAME} <${FROM_EMAIL}>`,
+    to: organizerEmail,
+    subject: `New sign-up for "${signupName}"`,
+    html: `
+      <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
+        <h2 style="color: #1f2937;">${signupName}</h2>
+        <p style="color: #6b7280;"><strong>${participantName}</strong> signed up for <strong>${itemLabel}</strong>.</p>
+        <a href="${appUrl}/signup/${signupSlug}"
+           style="display: inline-block; background: #6366f1; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; margin-top: 16px;">
+          View Sign-Up Sheet
+        </a>
+      </div>
+    `,
+  });
+}
