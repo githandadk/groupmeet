@@ -23,7 +23,6 @@ export default function NewEventPage() {
   }, []);
 
   const today = new Date().toISOString().split('T')[0];
-  const maxDate = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -124,8 +123,7 @@ export default function NewEventPage() {
                 type="date"
                 value={dateStart}
                 min={today}
-                max={maxDate}
-                onChange={(e) => {
+                                onChange={(e) => {
                   setDateStart(e.target.value);
                   if (!dateEnd || e.target.value > dateEnd) {
                     setDateEnd(e.target.value);
@@ -143,8 +141,7 @@ export default function NewEventPage() {
                 type="date"
                 value={dateEnd}
                 min={dateStart || today}
-                max={maxDate}
-                onChange={(e) => setDateEnd(e.target.value)}
+                                onChange={(e) => setDateEnd(e.target.value)}
                 className="w-full px-3 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none text-base"
               />
             </div>
