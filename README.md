@@ -1,36 +1,43 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Group Tools
+
+A mobile-first suite of lightweight group coordination tools. No accounts, no installs — just shareable links.
+
+## Features
+
+- **Find a Time** — Group availability finder for picking a meeting time across attendees and timezones.
+- **Sign-Up Sheet** — Coordinate volunteers/items across one or more days with quantity slots.
+- **Potluck** — Crowdsource what people are bringing to a shared meal.
+- **Meal Train** — Organize meals for a family or person in need over a recurring schedule.
+- **Group Poll** — Quick multiple-choice polls with shareable results.
+
+Each tool produces a unique shareable URL plus an admin URL for the organizer.
 
 ## Getting Started
 
-First, run the development server:
+Install dependencies and start the dev server:
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000) with your browser.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Environment
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Copy the relevant secrets into `.env.local`:
 
-## Learn More
+- `NEXT_PUBLIC_SUPABASE_URL` — Supabase project URL
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY` — Supabase anon key
+- `SUPABASE_SERVICE_ROLE_KEY` — Supabase service-role key (required by server routes)
+- `SUPERADMIN_SECRET` — shared secret for the `/superadmin` dashboard. Generate with `openssl rand -hex 32`.
 
-To learn more about Next.js, take a look at the following resources:
+## Tech
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- Next.js 14 (App Router)
+- Supabase (Postgres + RPC)
+- Tailwind CSS
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Deploy
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Deploys cleanly on Vercel. Make sure all environment variables above are set in the Vercel project settings.
