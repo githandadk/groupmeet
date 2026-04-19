@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
+import { useState, useRef, useCallback, useEffect, useMemo, Fragment } from 'react';
 import { getDatesInRange, getTimeSlots, formatDate, formatMinutes, slotKey, parseSlotKey, granularityStepMinutes } from '@/lib/utils';
 
 interface AvailabilityGridProps {
@@ -31,6 +31,18 @@ export default function AvailabilityGrid({
     [granularity, timeStart, timeEnd, step]
   );
 
+  const dateIndex = useMemo(() => {
+    const m = new Map<string, number>();
+    dates.forEach((d, i) => m.set(d, i));
+    return m;
+  }, [dates]);
+
+  const slotIndex = useMemo(() => {
+    const m = new Map<number, number>();
+    timeSlots.forEach((s, i) => m.set(s, i));
+    return m;
+  }, [timeSlots]);
+
   const [isSelecting, setIsSelecting] = useState(false);
   const [selectMode, setSelectMode] = useState<'add' | 'remove'>('add');
   const [draggedCells, setDraggedCells] = useState<Set<string>>(new Set());
@@ -40,9 +52,25 @@ export default function AvailabilityGrid({
   // For horizontal scrolling on mobile - show 3 days at a time
   const [dayOffset, setDayOffset] = useState(0);
   const visibleDays = Math.min(dates.length, 3);
-  const visibleDates = dates.slice(dayOffset, dayOffset + visibleDays);
+  const visibleDates = useMemo(
+    () => dates.slice(dayOffset, dayOffset + visibleDays),
+    [dates, dayOffset, visibleDays]
+  );
   const canScrollLeft = dayOffset > 0;
   const canScrollRight = dayOffset + visibleDays < dates.length;
+
+  const visibleDateHeaders = useMemo(
+    () =>
+      visibleDates.map((date) => {
+        const dt = new Date(date + 'T00:00:00');
+        return {
+          date,
+          weekday: dt.toLocaleDateString('en-US', { weekday: 'short' }),
+          day: dt.getDate(),
+        };
+      }),
+    [visibleDates]
+  );
 
   const getCellFromPoint = useCallback(
     (x: number, y: number): string | null => {
@@ -81,8 +109,8 @@ export default function AvailabilityGrid({
         const newDragged = new Set<string>();
 
         if (granularity === 'daily') {
-          const startIdx = dates.indexOf(startKey);
-          const endIdx = dates.indexOf(key);
+          const startIdx = dateIndex.get(startKey) ?? -1;
+          const endIdx = dateIndex.get(key) ?? -1;
           if (startIdx !== -1 && endIdx !== -1) {
             const lo = Math.min(startIdx, endIdx);
             const hi = Math.max(startIdx, endIdx);
@@ -93,20 +121,16 @@ export default function AvailabilityGrid({
         } else {
           const startParsed = parseSlotKey(startKey);
           const endParsed = parseSlotKey(key);
-          const startDayIdx = dates.indexOf(startParsed.date);
-          const endDayIdx = dates.indexOf(endParsed.date);
+          const startDayIdx = dateIndex.get(startParsed.date) ?? -1;
+          const endDayIdx = dateIndex.get(endParsed.date) ?? -1;
 
           if (startDayIdx !== -1 && endDayIdx !== -1) {
             const loDay = Math.min(startDayIdx, endDayIdx);
             const hiDay = Math.max(startDayIdx, endDayIdx);
-            const loSlotIdx = Math.min(
-              timeSlots.indexOf(startParsed.minutes),
-              timeSlots.indexOf(endParsed.minutes)
-            );
-            const hiSlotIdx = Math.max(
-              timeSlots.indexOf(startParsed.minutes),
-              timeSlots.indexOf(endParsed.minutes)
-            );
+            const startSlotIdx = slotIndex.get(startParsed.minutes) ?? -1;
+            const endSlotIdx = slotIndex.get(endParsed.minutes) ?? -1;
+            const loSlotIdx = Math.min(startSlotIdx, endSlotIdx);
+            const hiSlotIdx = Math.max(startSlotIdx, endSlotIdx);
 
             if (loSlotIdx !== -1 && hiSlotIdx !== -1) {
               for (let d = loDay; d <= hiDay; d++) {
@@ -121,7 +145,7 @@ export default function AvailabilityGrid({
         setDraggedCells(newDragged);
       }
     },
-    [isSelecting, readOnly, getCellFromPoint, dates, granularity, timeSlots]
+    [isSelecting, readOnly, getCellFromPoint, dates, granularity, timeSlots, dateIndex, slotIndex]
   );
 
   const handlePointerUp = useCallback(() => {
@@ -257,25 +281,19 @@ export default function AvailabilityGrid({
       >
         {/* Header row */}
         <div className="h-12" />
-        {visibleDates.map((date) => (
-          <div key={date} className="h-12 flex flex-col items-center justify-center text-xs">
-            <span className="font-medium text-gray-900">
-              {new Date(date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short' })}
-            </span>
-            <span className="text-gray-500">
-              {new Date(date + 'T00:00:00').getDate()}
-            </span>
+        {visibleDateHeaders.map((h) => (
+          <div key={h.date} className="h-12 flex flex-col items-center justify-center text-xs">
+            <span className="font-medium text-gray-900">{h.weekday}</span>
+            <span className="text-gray-500">{h.day}</span>
           </div>
         ))}
 
         {/* Time rows */}
         {timeSlots.map((mins) => {
-          const key_prefix = mins;
           const isHourBoundary = mins % 60 === 0;
           return (
-            <>
+            <Fragment key={`row-${mins}`}>
               <div
-                key={`label-${key_prefix}`}
                 className={`${cellHeight} flex items-center justify-end pr-2 text-xs text-gray-400`}
               >
                 {isHourBoundary || step >= 60 ? formatMinutes(mins) : ''}
@@ -297,7 +315,7 @@ export default function AvailabilityGrid({
                   />
                 );
               })}
-            </>
+            </Fragment>
           );
         })}
       </div>

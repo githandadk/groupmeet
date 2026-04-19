@@ -1,13 +1,13 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, Fragment } from 'react';
 import { getDatesInRange, getTimeSlots, formatDate, formatMinutes, slotKey, granularityStepMinutes, utcToWallClock, getTimezoneAbbr } from '@/lib/utils';
 import type { Event, Availability, Participant } from '@/types/database';
 
 interface HeatmapProps {
   event: Omit<Event, 'admin_token'>;
   availability: Availability[];
-  participants: Participant[];
+  participants: Omit<Participant, 'email' | 'session_token'>[];
   onSelectSlot?: (slotStart: string, slotEnd: string) => void;
 }
 
@@ -20,12 +20,32 @@ interface SlotInfo {
 }
 
 export default function Heatmap({ event, availability, participants, onSelectSlot }: HeatmapProps) {
-  const dates = getDatesInRange(event.date_range_start, event.date_range_end);
+  const dates = useMemo(
+    () => getDatesInRange(event.date_range_start, event.date_range_end),
+    [event.date_range_start, event.date_range_end]
+  );
   const step = granularityStepMinutes(event.granularity);
-  const timeSlots = event.granularity !== 'daily'
-    ? getTimeSlots(event.time_start ?? 8, event.time_end ?? 22, step)
-    : [];
+  const timeSlots = useMemo(
+    () =>
+      event.granularity !== 'daily'
+        ? getTimeSlots(event.time_start ?? 8, event.time_end ?? 22, step)
+        : [],
+    [event.granularity, event.time_start, event.time_end, step]
+  );
   const totalParticipants = participants.length;
+
+  const dateHeaders = useMemo(
+    () =>
+      dates.map((date) => {
+        const dt = new Date(date + 'T00:00:00');
+        return {
+          date,
+          weekday: dt.toLocaleDateString('en-US', { weekday: 'short' }),
+          day: dt.getDate(),
+        };
+      }),
+    [dates]
+  );
 
   const participantMap = useMemo(() => {
     const map: Record<string, string> = {};
@@ -155,14 +175,10 @@ export default function Heatmap({ event, availability, participants, onSelectSlo
         >
           {/* Header */}
           <div className="h-12" />
-          {dates.map((date) => (
-            <div key={date} className="h-12 flex flex-col items-center justify-center text-xs">
-              <span className="font-medium text-gray-900">
-                {new Date(date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short' })}
-              </span>
-              <span className="text-gray-500">
-                {new Date(date + 'T00:00:00').getDate()}
-              </span>
+          {dateHeaders.map((h) => (
+            <div key={h.date} className="h-12 flex flex-col items-center justify-center text-xs">
+              <span className="font-medium text-gray-900">{h.weekday}</span>
+              <span className="text-gray-500">{h.day}</span>
             </div>
           ))}
 
@@ -170,8 +186,8 @@ export default function Heatmap({ event, availability, participants, onSelectSlo
           {timeSlots.map((mins) => {
             const isHourBoundary = mins % 60 === 0;
             return (
-              <>
-                <div key={`label-${mins}`} className={`${cellHeight} flex items-center justify-end pr-2 text-xs text-gray-400`}>
+              <Fragment key={`row-${mins}`}>
+                <div className={`${cellHeight} flex items-center justify-end pr-2 text-xs text-gray-400`}>
                   {isHourBoundary || step >= 60 ? formatMinutes(mins) : ''}
                 </div>
                 {dates.map((date) => {
@@ -193,7 +209,7 @@ export default function Heatmap({ event, availability, participants, onSelectSlo
                     </div>
                   );
                 })}
-              </>
+              </Fragment>
             );
           })}
         </div>

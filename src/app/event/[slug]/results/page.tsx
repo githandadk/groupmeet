@@ -13,7 +13,7 @@ export default function ResultsPage() {
 
   const [event, setEvent] = useState<Omit<Event, 'admin_token'> | null>(null);
   const [availability, setAvailability] = useState<Availability[]>([]);
-  const [participants, setParticipants] = useState<Participant[]>([]);
+  const [participants, setParticipants] = useState<Omit<Participant, 'email' | 'session_token'>[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -32,8 +32,14 @@ export default function ResultsPage() {
       setEvent(eventData);
 
       const [{ data: avail }, { data: parts }] = await Promise.all([
-        supabase.from('availability').select('*').eq('event_id', eventData.id),
-        supabase.from('participants').select('*').eq('event_id', eventData.id),
+        supabase
+          .from('availability')
+          .select('id, event_id, participant_id, slot_start, slot_end')
+          .eq('event_id', eventData.id),
+        supabase
+          .from('participants')
+          .select('id, name, created_at, event_id')
+          .eq('event_id', eventData.id),
       ]);
 
       setAvailability(avail || []);
@@ -49,7 +55,7 @@ export default function ResultsPage() {
           async () => {
             const { data: newAvail } = await supabase
               .from('availability')
-              .select('*')
+              .select('id, event_id, participant_id, slot_start, slot_end')
               .eq('event_id', eventData.id);
             setAvailability(newAvail || []);
           }
@@ -60,7 +66,7 @@ export default function ResultsPage() {
           async () => {
             const { data: newParts } = await supabase
               .from('participants')
-              .select('*')
+              .select('id, name, created_at, event_id')
               .eq('event_id', eventData.id);
             setParticipants(newParts || []);
           }

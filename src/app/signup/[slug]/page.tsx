@@ -46,7 +46,7 @@ export default function SignupParticipantPage() {
 
     const { data: claimsData } = await supabase
       .from('signup_claims')
-      .select('*')
+      .select('id, item_id, signup_id, participant_name, participant_email, session_token, created_at')
       .eq('signup_id', signupData.id);
 
     setClaims(claimsData || []);
@@ -93,7 +93,7 @@ export default function SignupParticipantPage() {
           // Reload claims on any change
           supabase
             .from('signup_claims')
-            .select('*')
+            .select('id, item_id, signup_id, participant_name, participant_email, session_token, created_at')
             .eq('signup_id', signup.id)
             .then(({ data }) => {
               if (data) setClaims(data);
@@ -133,7 +133,7 @@ export default function SignupParticipantPage() {
       // Reload claims
       const { data: claimsData } = await supabase
         .from('signup_claims')
-        .select('*')
+        .select('id, item_id, signup_id, participant_name, participant_email, session_token, created_at')
         .eq('signup_id', signup.id);
       setClaims(claimsData || []);
     } catch (err) {
@@ -166,7 +166,7 @@ export default function SignupParticipantPage() {
       // Reload claims
       const { data: claimsData } = await supabase
         .from('signup_claims')
-        .select('*')
+        .select('id, item_id, signup_id, participant_name, participant_email, session_token, created_at')
         .eq('signup_id', signup!.id);
       setClaims(claimsData || []);
     } catch (err) {
