@@ -8,14 +8,14 @@ import type { Signup } from '@/types/database';
 function CreatedContent({ slug }: { slug: string }) {
   const searchParams = useSearchParams();
   const adminToken = searchParams.get('admin') || '';
-  const [signup, setSignup] = useState<Signup | null>(null);
+  const [signup, setSignup] = useState<Omit<Signup, 'admin_token'> | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     supabase
       .from('signups')
-      .select('*')
+      .select('id, slug, name, description, type, organizer_email, recipient_name, dietary_notes, dropoff_location, created_at')
       .eq('slug', slug)
       .single()
       .then(({ data }) => {

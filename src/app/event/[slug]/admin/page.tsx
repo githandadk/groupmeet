@@ -1,33 +1,24 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase/client';
 import Heatmap from '@/components/Heatmap';
 import { downloadICS, formatUTCInTimezone, getTimezoneAbbr } from '@/lib/utils';
 import type { Event, Availability, Participant } from '@/types/database';
 
-function readTokenFromHash(): string | null {
-  if (typeof window === 'undefined') return null;
-  const hash = window.location.hash.replace(/^#/, '');
-  if (!hash) return null;
-  const params = new URLSearchParams(hash);
-  return params.get('token');
-}
-
-function scrubHash() {
-  if (typeof window === 'undefined') return;
-  if (window.location.hash) {
-    history.replaceState(null, '', window.location.pathname + window.location.search);
-  }
-}
-
 export default function EventAdminPage() {
   const params = useParams();
   const slug = params.slug as string;
 
-  const [adminToken, setAdminToken] = useState<string | null>(null);
-  const [event, setEvent] = useState<Event | null>(null);
+  const [adminToken] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null;
+    const hash = window.location.hash.replace(/^#/, '');
+    if (!hash) return null;
+    return new URLSearchParams(hash).get('token');
+  });
+  const scrubbedRef = useRef(false);
+  const [event, setEvent] = useState<Omit<Event, 'admin_token'> | null>(null);
   const [availability, setAvailability] = useState<Availability[]>([]);
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [loading, setLoading] = useState(true);
@@ -35,11 +26,13 @@ export default function EventAdminPage() {
   const [selecting, setSelecting] = useState(false);
   const [notifying, setNotifying] = useState(false);
 
-  // Read token from URL fragment on mount, then scrub
+  // Scrub the hash once after mount (Strict Mode-safe)
   useEffect(() => {
-    const tk = readTokenFromHash();
-    setAdminToken(tk);
-    scrubHash();
+    if (scrubbedRef.current) return;
+    scrubbedRef.current = true;
+    if (typeof window !== 'undefined' && window.location.hash) {
+      history.replaceState(null, '', window.location.pathname + window.location.search);
+    }
   }, []);
 
   const loadAll = useCallback(async (token: string) => {
@@ -68,7 +61,6 @@ export default function EventAdminPage() {
   }, [slug]);
 
   useEffect(() => {
-    if (adminToken === null) return; // hash not yet read
     if (!adminToken) {
       setAuthError('Missing admin token');
       setLoading(false);

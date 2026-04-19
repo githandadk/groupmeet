@@ -5,7 +5,7 @@ import { getDatesInRange, getTimeSlots, formatDate, formatMinutes, slotKey, gran
 import type { Event, Availability, Participant } from '@/types/database';
 
 interface HeatmapProps {
-  event: Event;
+  event: Omit<Event, 'admin_token'>;
   availability: Availability[];
   participants: Participant[];
   onSelectSlot?: (slotStart: string, slotEnd: string) => void;

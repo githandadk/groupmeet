@@ -1,40 +1,36 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase/client';
 import SignupItemList from '@/components/SignupItemList';
 import type { Signup, SignupItem, SignupClaim } from '@/types/database';
 
-function readTokenFromHash(): string | null {
-  if (typeof window === 'undefined') return null;
-  const hash = window.location.hash.replace(/^#/, '');
-  if (!hash) return null;
-  return new URLSearchParams(hash).get('token');
-}
-
-function scrubHash() {
-  if (typeof window === 'undefined') return;
-  if (window.location.hash) {
-    history.replaceState(null, '', window.location.pathname + window.location.search);
-  }
-}
-
 export default function SignupAdminPage() {
   const params = useParams();
   const slug = params.slug as string;
 
-  const [adminToken, setAdminToken] = useState<string | null>(null);
-  const [signup, setSignup] = useState<Signup | null>(null);
+  const [adminToken] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null;
+    const hash = window.location.hash.replace(/^#/, '');
+    if (!hash) return null;
+    return new URLSearchParams(hash).get('token');
+  });
+  const scrubbedRef = useRef(false);
+  const [signup, setSignup] = useState<Omit<Signup, 'admin_token'> | null>(null);
   const [items, setItems] = useState<SignupItem[]>([]);
   const [claims, setClaims] = useState<SignupClaim[]>([]);
   const [loading, setLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
   const [removing, setRemoving] = useState<string | null>(null);
 
+  // Scrub the hash once after mount (Strict Mode-safe)
   useEffect(() => {
-    setAdminToken(readTokenFromHash());
-    scrubHash();
+    if (scrubbedRef.current) return;
+    scrubbedRef.current = true;
+    if (typeof window !== 'undefined' && window.location.hash) {
+      history.replaceState(null, '', window.location.pathname + window.location.search);
+    }
   }, []);
 
   const loadAll = useCallback(async (token: string) => {
@@ -63,7 +59,6 @@ export default function SignupAdminPage() {
   }, [slug]);
 
   useEffect(() => {
-    if (adminToken === null) return;
     if (!adminToken) {
       setAuthError('Missing admin token');
       setLoading(false);
@@ -72,25 +67,19 @@ export default function SignupAdminPage() {
     loadAll(adminToken);
   }, [adminToken, loadAll]);
 
-  // Realtime claims updates — narrow column list
+  // Realtime claims updates — reload via admin API to keep email data fresh
   useEffect(() => {
-    if (!signup) return;
+    if (!signup || !adminToken) return;
     const sub = supabase
       .channel(`admin-claims-${signup.id}`)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'signup_claims', filter: `signup_id=eq.${signup.id}` },
-        async () => {
-          const { data } = await supabase
-            .from('signup_claims')
-            .select('id, item_id, signup_id, participant_name, created_at')
-            .eq('signup_id', signup.id);
-          if (data) setClaims(data as SignupClaim[]);
-        }
+        () => { loadAll(adminToken); }
       )
       .subscribe();
     return () => { supabase.removeChannel(sub); };
-  }, [signup]);
+  }, [signup, adminToken, loadAll]);
 
   async function handleAdminRemove(claimId: string) {
     if (!signup || !adminToken) return;

@@ -11,7 +11,7 @@ export default function ResultsPage() {
   const params = useParams();
   const slug = params.slug as string;
 
-  const [event, setEvent] = useState<Event | null>(null);
+  const [event, setEvent] = useState<Omit<Event, 'admin_token'> | null>(null);
   const [availability, setAvailability] = useState<Availability[]>([]);
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [loading, setLoading] = useState(true);
@@ -20,7 +20,7 @@ export default function ResultsPage() {
     async function load() {
       const { data: eventData } = await supabase
         .from('events')
-        .select('*')
+        .select('id, slug, name, description, date_range_start, date_range_end, granularity, time_start, time_end, organizer_email, selected_slot, timezone, created_at')
         .eq('slug', slug)
         .single();
 

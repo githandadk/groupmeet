@@ -10,7 +10,7 @@ import { generateToken } from '@/lib/utils';
 export default function SignupParticipantPage() {
   const params = useParams();
   const slug = params.slug as string;
-  const [signup, setSignup] = useState<Signup | null>(null);
+  const [signup, setSignup] = useState<Omit<Signup, 'admin_token'> | null>(null);
   const [items, setItems] = useState<SignupItem[]>([]);
   const [claims, setClaims] = useState<SignupClaim[]>([]);
   const [participantName, setParticipantName] = useState('');
@@ -24,7 +24,7 @@ export default function SignupParticipantPage() {
   const loadData = useCallback(async () => {
     const { data: signupData, error: signupError } = await supabase
       .from('signups')
-      .select('*')
+      .select('id, slug, name, description, type, organizer_email, recipient_name, dietary_notes, dropoff_location, created_at')
       .eq('slug', slug)
       .single();
 
