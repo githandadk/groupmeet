@@ -55,7 +55,7 @@ export function generateICS(
   return [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
-    'PRODID:-//GroupMeet//EN',
+    'PRODID:-//Group Tools//EN',
     'BEGIN:VEVENT',
     `DTSTART:${start}`,
     `DTEND:${end}`,

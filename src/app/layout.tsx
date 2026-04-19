@@ -9,14 +9,14 @@ const geistSans = localFont({
 });
 
 export const metadata: Metadata = {
-  title: 'GroupMeet - Find a Time That Works for Everyone',
+  title: 'Group Tools - Coordinate Without Accounts',
   description:
-    'Mobile-friendly group availability finder. No accounts required. Share a link, tap your available times, see the group overlap.',
+    'Mobile-friendly tools for group coordination: availability finder, sign-up sheets, potlucks, meal trains, and quick polls. No accounts required.',
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
-    title: 'GroupMeet',
+    title: 'Group Tools',
   },
 };
 

@@ -12,7 +12,7 @@ const transporter = nodemailer.createTransport({
 });
 
 const FROM_EMAIL = process.env.SMTP2GO_FROM_EMAIL || 'noreply@groupmeet.app';
-const FROM_NAME = 'GroupMeet';
+const FROM_NAME = 'Group Tools';
 
 export async function sendNewResponseEmail(
   organizerEmail: string,

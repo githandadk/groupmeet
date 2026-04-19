@@ -2,6 +2,7 @@
   "name": "temp-app",
   "version": "0.1.0",
   "private": true,
+  "description": "Group Tools — mobile-first tools for group coordination without accounts",
   "scripts": {
     "dev": "next dev",
     "build": "next build",

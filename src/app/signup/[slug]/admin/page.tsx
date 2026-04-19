@@ -147,7 +147,7 @@ function AdminContent({ slug }: { slug: string }) {
     <main className="min-h-screen flex flex-col items-center px-4 py-8">
       <div className="w-full max-w-md">
         <div className="text-center mb-6">
-          <a href="/" className="text-sm text-gray-400 hover:text-indigo-500 transition-colors">GroupMeet</a>
+          <a href="/" className="text-sm text-gray-400 hover:text-indigo-500 transition-colors">Group Tools</a>
           <h1 className="text-2xl font-bold text-gray-900 mt-1">{signup.name}</h1>
           <span className="inline-block mt-1 text-xs px-2.5 py-1 rounded-full bg-amber-100 text-amber-700 font-medium">
             Admin View

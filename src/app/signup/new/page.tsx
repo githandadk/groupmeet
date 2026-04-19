@@ -174,7 +174,7 @@ function NewSignupForm() {
     <main className="min-h-screen flex flex-col items-center px-4 py-8">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <a href="/" className="text-3xl font-bold text-gray-900 mb-2 block hover:text-indigo-600 transition-colors">GroupMeet</a>
+          <a href="/" className="text-3xl font-bold text-gray-900 mb-2 block hover:text-indigo-600 transition-colors">Group Tools</a>
           <p className="text-gray-500">
             {type === 'potluck' ? 'Organize who brings what' : 'Create a sign-up sheet'}
           </p>

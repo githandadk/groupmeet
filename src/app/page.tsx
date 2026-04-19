@@ -45,8 +45,8 @@ export default function Home() {
     <main className="min-h-screen flex flex-col items-center px-4 py-12">
       <div className="w-full max-w-md">
         <div className="text-center mb-10">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">GroupMeet</h1>
-          <p className="text-gray-500">Organize your group, no account needed</p>
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">Group Tools</h1>
+          <p className="text-gray-500">Coordinate your group, no accounts needed</p>
         </div>
 
         <div className="space-y-4">

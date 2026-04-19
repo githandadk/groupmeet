@@ -1,4 +1,4 @@
-const CACHE_NAME = 'groupmeet-v1';
+const CACHE_NAME = 'group-tools-v1';
 const PRECACHE_URLS = ['/', '/manifest.json'];
 
 self.addEventListener('install', (event) => {
