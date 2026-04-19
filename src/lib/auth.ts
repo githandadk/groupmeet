@@ -1,3 +1,4 @@
+import { timingSafeEqual } from 'node:crypto';
 import { createSupabaseAdmin } from '@/lib/supabase/server';
 import type { Event, Signup } from '@/types/database';
 
@@ -67,10 +68,12 @@ export async function requireSignupAdmin(slug: string, token: string | null | un
 }
 
 function constantTimeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let result = 0;
-  for (let i = 0; i < a.length; i++) {
-    result |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  }
-  return result === 0;
+  // Always run a fixed-size compare to avoid leaking length via short-circuit timing.
+  // Pad both inputs to the longer length, run timingSafeEqual, then verify lengths match.
+  const ab = Buffer.from(a);
+  const bb = Buffer.from(b);
+  const max = Math.max(ab.length, bb.length);
+  const padA = Buffer.concat([ab, Buffer.alloc(max - ab.length)]);
+  const padB = Buffer.concat([bb, Buffer.alloc(max - bb.length)]);
+  return timingSafeEqual(padA, padB) && ab.length === bb.length;
 }
