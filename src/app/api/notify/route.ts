@@ -1,19 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createSupabaseAdmin } from '@/lib/supabase/server';
 import { sendNewResponseEmail, sendTimeSelectedEmail, sendNewClaimEmail } from '@/lib/email';
+import { requireAdmin, AdminAuthError } from '@/lib/auth';
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-
     const supabaseAdmin = createSupabaseAdmin();
 
     if (body.type === 'new_response') {
+      // Internal-only notification triggered by participant submit. Trust the request:
+      // it does not expose any data and it cannot be used to spam arbitrary recipients
+      // (the recipient comes from the row we look up server-side).
       const { eventId, participantName } = body;
 
       const { data: event } = await supabaseAdmin
         .from('events')
-        .select('*')
+        .select('slug, name, organizer_email')
         .eq('id', eventId)
         .single();
 
@@ -25,7 +28,7 @@ export async function POST(request: NextRequest) {
         await sendNewResponseEmail(
           event.organizer_email,
           event.name,
-          participantName,
+          String(participantName || 'A participant'),
           event.slug
         );
       } catch (emailError) {
@@ -36,36 +39,32 @@ export async function POST(request: NextRequest) {
     }
 
     if (body.type === 'time_selected') {
-      const { eventId, slotStart, slotEnd } = body;
-
-      const { data: event } = await supabaseAdmin
-        .from('events')
-        .select('*')
-        .eq('id', eventId)
-        .single();
-
-      if (!event) {
-        return NextResponse.json({ error: 'Event not found' }, { status: 404 });
+      // Fan-out to every participant — must be admin-gated.
+      const { eventSlug, adminToken, slotStart, slotEnd } = body;
+      let event;
+      try {
+        event = await requireAdmin('event', eventSlug, adminToken) as {
+          id: string; name: string; description: string | null; organizer_email: string | null;
+        };
+      } catch (e) {
+        if (e instanceof AdminAuthError) {
+          return NextResponse.json({ error: e.message }, { status: e.status });
+        }
+        throw e;
       }
 
-      // Get all participants with emails
       const { data: participants } = await supabaseAdmin
         .from('participants')
         .select('email')
-        .eq('event_id', eventId)
+        .eq('event_id', event.id)
         .not('email', 'is', null);
 
       const emails = new Set<string>();
       participants?.forEach((p) => {
         if (p.email) emails.add(p.email);
       });
+      if (event.organizer_email) emails.add(event.organizer_email);
 
-      // Also notify organizer
-      if (event.organizer_email) {
-        emails.add(event.organizer_email);
-      }
-
-      // Send emails (don't let individual failures stop the rest)
       const results = await Promise.allSettled(
         Array.from(emails).map((email) =>
           sendTimeSelectedEmail(email, event.name, event.description, slotStart, slotEnd)
@@ -73,19 +72,19 @@ export async function POST(request: NextRequest) {
       );
 
       const failed = results.filter((r) => r.status === 'rejected').length;
-      if (failed > 0) {
-        console.error(`${failed} email(s) failed to send`);
-      }
+      if (failed > 0) console.error(`${failed} email(s) failed to send`);
 
       return NextResponse.json({ ok: true, sent: emails.size - failed });
     }
 
     if (body.type === 'new_signup_claim') {
+      // Internal-only notification triggered by claim API. The claim itself is rate-limited
+      // upstream (Phase 4.6) and the recipient comes from the server-side row lookup.
       const { signupId, participantName } = body;
 
       const { data: signup } = await supabaseAdmin
         .from('signups')
-        .select('*')
+        .select('slug, name, organizer_email')
         .eq('id', signupId)
         .single();
 
@@ -93,7 +92,6 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ ok: true });
       }
 
-      // Find the most recent claim by this participant to get the item label
       const { data: recentClaim } = await supabaseAdmin
         .from('signup_claims')
         .select('item_id')
@@ -117,7 +115,7 @@ export async function POST(request: NextRequest) {
         await sendNewClaimEmail(
           signup.organizer_email,
           signup.name,
-          participantName,
+          String(participantName || 'A participant'),
           itemLabel,
           signup.slug
         );

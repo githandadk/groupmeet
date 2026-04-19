@@ -1,15 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createSupabaseAdmin } from '@/lib/supabase/server';
-
-function checkAuth(request: NextRequest): boolean {
-  const password = request.headers.get('x-admin-password');
-  const expected = process.env.SUPERADMIN_PASSWORD;
-  if (!expected) return false;
-  return password === expected;
-}
+import { isAuthenticated } from '@/lib/superadmin-session';
 
 export async function POST(request: NextRequest) {
-  if (!checkAuth(request)) {
+  if (!(await isAuthenticated())) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
@@ -17,92 +11,73 @@ export async function POST(request: NextRequest) {
   const body = await request.json();
 
   if (body.action === 'list') {
-    const { data, error } = await supabase
+    const { data: events, error } = await supabase
       .from('events')
       .select('id, slug, admin_token, name, date_range_start, date_range_end, granularity, organizer_email, selected_slot, created_at')
       .order('created_at', { ascending: false });
 
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-    // Get participant counts per event
-    const eventIds = (data || []).map((e) => e.id);
-    const { data: participants } = await supabase
-      .from('participants')
-      .select('event_id')
-      .in('event_id', eventIds);
-
-    const counts: Record<string, number> = {};
-    participants?.forEach((p) => {
-      if (p.event_id) {
-        counts[p.event_id] = (counts[p.event_id] || 0) + 1;
-      }
+    const { data: counts } = await supabase.rpc('superadmin_event_counts');
+    const countMap: Record<string, number> = {};
+    (counts || []).forEach((row: { event_id: string; participant_count: number }) => {
+      countMap[row.event_id] = Number(row.participant_count);
     });
 
-    const events = (data || []).map((e) => ({
-      ...e,
-      participant_count: counts[e.id] || 0,
-    }));
-
-    return NextResponse.json({ events });
+    return NextResponse.json({
+      events: (events || []).map((e) => ({ ...e, participant_count: countMap[e.id] || 0 })),
+    });
   }
 
   if (body.action === 'delete') {
     const { eventId } = body;
-    if (!eventId) {
-      return NextResponse.json({ error: 'Missing eventId' }, { status: 400 });
-    }
-
-    // Cascade deletes participants and availability via FK
+    if (!eventId) return NextResponse.json({ error: 'Missing eventId' }, { status: 400 });
     const { error } = await supabase.from('events').delete().eq('id', eventId);
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
-
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     return NextResponse.json({ ok: true });
   }
 
   if (body.action === 'list_signups') {
-    const { data, error } = await supabase
+    const { data: signups, error } = await supabase
       .from('signups')
       .select('id, slug, admin_token, name, type, organizer_email, created_at')
       .order('created_at', { ascending: false });
 
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-    const signupIds = (data || []).map((s) => s.id);
-    const { data: claimsData } = await supabase
-      .from('signup_claims')
-      .select('signup_id')
-      .in('signup_id', signupIds);
-
-    const claimCounts: Record<string, number> = {};
-    claimsData?.forEach((c) => {
-      claimCounts[c.signup_id] = (claimCounts[c.signup_id] || 0) + 1;
+    const { data: counts } = await supabase.rpc('superadmin_signup_counts');
+    const countMap: Record<string, number> = {};
+    (counts || []).forEach((row: { signup_id: string; claim_count: number }) => {
+      countMap[row.signup_id] = Number(row.claim_count);
     });
 
-    const signups = (data || []).map((s) => ({
-      ...s,
-      claim_count: claimCounts[s.id] || 0,
-    }));
-
-    return NextResponse.json({ signups });
+    return NextResponse.json({
+      signups: (signups || []).map((s) => ({ ...s, claim_count: countMap[s.id] || 0 })),
+    });
   }
 
   if (body.action === 'delete_signup') {
     const { signupId } = body;
-    if (!signupId) {
-      return NextResponse.json({ error: 'Missing signupId' }, { status: 400 });
-    }
-
+    if (!signupId) return NextResponse.json({ error: 'Missing signupId' }, { status: 400 });
     const { error } = await supabase.from('signups').delete().eq('id', signupId);
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ ok: true });
+  }
 
+  if (body.action === 'list_polls') {
+    const { data: polls, error } = await supabase
+      .from('polls')
+      .select('id, slug, admin_token, title, closed, created_at')
+      .order('created_at', { ascending: false });
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ polls: polls || [] });
+  }
+
+  if (body.action === 'delete_poll') {
+    const { pollId } = body;
+    if (!pollId) return NextResponse.json({ error: 'Missing pollId' }, { status: 400 });
+    const { error } = await supabase.from('polls').delete().eq('id', pollId);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     return NextResponse.json({ ok: true });
   }
 

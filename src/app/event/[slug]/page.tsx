@@ -66,7 +66,7 @@ export default function EventPage() {
       if (sessionToken) {
         const { data: participant } = await supabase
           .from('participants')
-          .select('*')
+          .select('id, name, email')
           .eq('event_id', data.id)
           .eq('session_token', sessionToken)
           .single();
