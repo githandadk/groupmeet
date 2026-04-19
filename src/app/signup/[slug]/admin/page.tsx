@@ -1,117 +1,112 @@
 'use client';
 
-import { useState, useEffect, useCallback, Suspense } from 'react';
-import { useParams, useSearchParams } from 'next/navigation';
+import { useState, useEffect, useCallback } from 'react';
+import { useParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase/client';
 import SignupItemList from '@/components/SignupItemList';
 import type { Signup, SignupItem, SignupClaim } from '@/types/database';
 
-function AdminContent({ slug }: { slug: string }) {
-  const searchParams = useSearchParams();
-  const adminToken = searchParams.get('token') || '';
+function readTokenFromHash(): string | null {
+  if (typeof window === 'undefined') return null;
+  const hash = window.location.hash.replace(/^#/, '');
+  if (!hash) return null;
+  return new URLSearchParams(hash).get('token');
+}
 
+function scrubHash() {
+  if (typeof window === 'undefined') return;
+  if (window.location.hash) {
+    history.replaceState(null, '', window.location.pathname + window.location.search);
+  }
+}
+
+export default function SignupAdminPage() {
+  const params = useParams();
+  const slug = params.slug as string;
+
+  const [adminToken, setAdminToken] = useState<string | null>(null);
   const [signup, setSignup] = useState<Signup | null>(null);
   const [items, setItems] = useState<SignupItem[]>([]);
   const [claims, setClaims] = useState<SignupClaim[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [authError, setAuthError] = useState<string | null>(null);
   const [removing, setRemoving] = useState<string | null>(null);
 
-  const loadData = useCallback(async () => {
-    const { data: signupData, error: signupError } = await supabase
-      .from('signups')
-      .select('*')
-      .eq('slug', slug)
-      .single();
+  useEffect(() => {
+    setAdminToken(readTokenFromHash());
+    scrubHash();
+  }, []);
 
-    if (signupError || !signupData) {
-      setError('Sign-up not found');
+  const loadAll = useCallback(async (token: string) => {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/signups/admin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'load', slug, adminToken: token }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setAuthError(data.error || 'Not authorized');
+        setLoading(false);
+        return;
+      }
+      const data = await res.json();
+      setSignup(data.signup);
+      setItems(data.items);
+      setClaims(data.claims);
       setLoading(false);
-      return;
-    }
-
-    // Verify admin token
-    if (signupData.admin_token !== adminToken) {
-      setError('Invalid admin token');
+    } catch {
+      setAuthError('Failed to load');
       setLoading(false);
-      return;
     }
-
-    setSignup(signupData);
-
-    const { data: itemsData } = await supabase
-      .from('signup_items')
-      .select('*')
-      .eq('signup_id', signupData.id)
-      .order('sort_order');
-
-    setItems(itemsData || []);
-
-    const { data: claimsData } = await supabase
-      .from('signup_claims')
-      .select('*')
-      .eq('signup_id', signupData.id);
-
-    setClaims(claimsData || []);
-    setLoading(false);
-  }, [slug, adminToken]);
+  }, [slug]);
 
   useEffect(() => {
-    loadData();
-  }, [loadData]);
+    if (adminToken === null) return;
+    if (!adminToken) {
+      setAuthError('Missing admin token');
+      setLoading(false);
+      return;
+    }
+    loadAll(adminToken);
+  }, [adminToken, loadAll]);
 
-  // Real-time subscriptions
+  // Realtime claims updates — narrow column list
   useEffect(() => {
     if (!signup) return;
-
-    const claimsSub = supabase
+    const sub = supabase
       .channel(`admin-claims-${signup.id}`)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'signup_claims', filter: `signup_id=eq.${signup.id}` },
-        () => {
-          supabase
+        async () => {
+          const { data } = await supabase
             .from('signup_claims')
-            .select('*')
-            .eq('signup_id', signup.id)
-            .then(({ data }) => {
-              if (data) setClaims(data);
-            });
+            .select('id, item_id, signup_id, participant_name, created_at')
+            .eq('signup_id', signup.id);
+          if (data) setClaims(data as SignupClaim[]);
         }
       )
       .subscribe();
-
-    return () => {
-      supabase.removeChannel(claimsSub);
-    };
+    return () => { supabase.removeChannel(sub); };
   }, [signup]);
 
   async function handleAdminRemove(claimId: string) {
-    if (!signup) return;
+    if (!signup || !adminToken) return;
     setRemoving(claimId);
-
     try {
-      const res = await fetch('/api/signups/claim', {
+      const res = await fetch('/api/signups/admin', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'admin_unclaim',
-          claimId,
-          adminToken,
-          signupId: signup.id,
-        }),
+        body: JSON.stringify({ action: 'remove_claim', slug, adminToken, claimId }),
       });
-
       if (!res.ok) {
         const data = await res.json();
         throw new Error(data.error || 'Failed to remove');
       }
-
-      const { data: claimsData } = await supabase
-        .from('signup_claims')
-        .select('*')
-        .eq('signup_id', signup.id);
-      setClaims(claimsData || []);
+      // Reload via API to keep emails populated
+      await loadAll(adminToken);
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to remove claim');
     } finally {
@@ -127,11 +122,11 @@ function AdminContent({ slug }: { slug: string }) {
     );
   }
 
-  if (error || !signup) {
+  if (authError || !signup) {
     return (
       <main className="min-h-screen flex items-center justify-center px-4">
         <div className="text-center">
-          <p className="text-gray-500 mb-4">{error || 'Not found'}</p>
+          <p className="text-gray-500 mb-4">{authError || 'Not found'}</p>
           <a href="/" className="text-indigo-500 hover:text-indigo-600 font-medium">Go Home</a>
         </div>
       </main>
@@ -154,7 +149,6 @@ function AdminContent({ slug }: { slug: string }) {
           </span>
         </div>
 
-        {/* Stats */}
         <div className={`grid gap-3 mb-6 ${hasDates ? 'grid-cols-4' : 'grid-cols-3'}`}>
           {hasDates && (
             <div className="bg-white rounded-xl border border-gray-200 p-3 text-center">
@@ -176,7 +170,6 @@ function AdminContent({ slug }: { slug: string }) {
           </div>
         </div>
 
-        {/* Share link */}
         <div className="bg-indigo-50 rounded-xl p-4 mb-6">
           <p className="text-sm text-indigo-700 font-medium mb-2">Participant Link</p>
           <div className="flex gap-2">
@@ -187,9 +180,7 @@ function AdminContent({ slug }: { slug: string }) {
               className="flex-1 px-3 py-2 rounded-lg border border-indigo-200 text-sm bg-white text-gray-700"
             />
             <button
-              onClick={() => {
-                navigator.clipboard.writeText(`${window.location.origin}/signup/${slug}`);
-              }}
+              onClick={() => navigator.clipboard.writeText(`${window.location.origin}/signup/${slug}`)}
               className="px-3 py-2 bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-medium rounded-lg transition-colors"
             >
               Copy
@@ -197,7 +188,6 @@ function AdminContent({ slug }: { slug: string }) {
           </div>
         </div>
 
-        {/* Items with admin controls */}
         <SignupItemList
           items={items}
           claims={claims}
@@ -211,23 +201,5 @@ function AdminContent({ slug }: { slug: string }) {
         />
       </div>
     </main>
-  );
-}
-
-function AdminPageInner() {
-  const params = useParams();
-  const slug = params.slug as string;
-  return <AdminContent slug={slug} />;
-}
-
-export default function SignupAdminPage() {
-  return (
-    <Suspense fallback={
-      <main className="min-h-screen flex items-center justify-center">
-        <p className="text-gray-400">Loading...</p>
-      </main>
-    }>
-      <AdminPageInner />
-    </Suspense>
   );
 }

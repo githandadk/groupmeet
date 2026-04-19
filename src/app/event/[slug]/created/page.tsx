@@ -17,7 +17,7 @@ function CreatedContent() {
   }, []);
 
   const shareLink = `${appUrl}/event/${slug}`;
-  const adminLink = `${appUrl}/event/${slug}/admin?token=${adminToken}`;
+  const adminLink = `${appUrl}/event/${slug}/admin#token=${adminToken}`;
 
   async function copyToClipboard(text: string, type: 'share' | 'admin') {
     try {

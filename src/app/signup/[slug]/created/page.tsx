@@ -42,7 +42,7 @@ function CreatedContent({ slug }: { slug: string }) {
 
   const appUrl = typeof window !== 'undefined' ? window.location.origin : '';
   const shareUrl = `${appUrl}/signup/${slug}`;
-  const adminUrl = `${appUrl}/signup/${slug}/admin?token=${adminToken}`;
+  const adminUrl = `${appUrl}/signup/${slug}/admin#token=${adminToken}`;
 
   function copyToClipboard(text: string, label: string) {
     navigator.clipboard.writeText(text);

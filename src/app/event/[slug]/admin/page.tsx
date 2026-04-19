@@ -1,122 +1,153 @@
 'use client';
 
-import { useState, useEffect, Suspense } from 'react';
-import { useParams, useSearchParams } from 'next/navigation';
+import { useState, useEffect, useCallback } from 'react';
+import { useParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase/client';
 import Heatmap from '@/components/Heatmap';
 import { downloadICS, formatUTCInTimezone, getTimezoneAbbr } from '@/lib/utils';
 import type { Event, Availability, Participant } from '@/types/database';
 
-function AdminContent() {
-  const params = useParams();
-  const searchParams = useSearchParams();
-  const slug = params.slug as string;
-  const token = searchParams.get('token');
+function readTokenFromHash(): string | null {
+  if (typeof window === 'undefined') return null;
+  const hash = window.location.hash.replace(/^#/, '');
+  if (!hash) return null;
+  const params = new URLSearchParams(hash);
+  return params.get('token');
+}
 
+function scrubHash() {
+  if (typeof window === 'undefined') return;
+  if (window.location.hash) {
+    history.replaceState(null, '', window.location.pathname + window.location.search);
+  }
+}
+
+export default function EventAdminPage() {
+  const params = useParams();
+  const slug = params.slug as string;
+
+  const [adminToken, setAdminToken] = useState<string | null>(null);
   const [event, setEvent] = useState<Event | null>(null);
   const [availability, setAvailability] = useState<Availability[]>([]);
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [loading, setLoading] = useState(true);
-  const [authorized, setAuthorized] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
   const [selecting, setSelecting] = useState(false);
   const [notifying, setNotifying] = useState(false);
 
+  // Read token from URL fragment on mount, then scrub
   useEffect(() => {
-    async function load() {
-      const { data: eventData } = await supabase
-        .from('events')
-        .select('*')
-        .eq('slug', slug)
-        .single();
+    const tk = readTokenFromHash();
+    setAdminToken(tk);
+    scrubHash();
+  }, []);
 
-      if (!eventData) {
+  const loadAll = useCallback(async (token: string) => {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/events/admin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'load', slug, adminToken: token }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setAuthError(data.error || 'Not authorized');
         setLoading(false);
         return;
       }
-
-      if (eventData.admin_token !== token) {
-        setLoading(false);
-        return;
-      }
-
-      setAuthorized(true);
-      setEvent(eventData);
-
-      const [{ data: avail }, { data: parts }] = await Promise.all([
-        supabase.from('availability').select('*').eq('event_id', eventData.id),
-        supabase.from('participants').select('*').eq('event_id', eventData.id),
-      ]);
-
-      setAvailability(avail || []);
-      setParticipants(parts || []);
+      const data = await res.json();
+      setEvent(data.event);
+      setAvailability(data.availability);
+      setParticipants(data.participants);
       setLoading(false);
-
-      // Subscribe to real-time
-      const channel = supabase
-        .channel(`admin-${eventData.id}`)
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'availability', filter: `event_id=eq.${eventData.id}` },
-          async () => {
-            const { data } = await supabase.from('availability').select('*').eq('event_id', eventData.id);
-            setAvailability(data || []);
-          }
-        )
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'participants', filter: `event_id=eq.${eventData.id}` },
-          async () => {
-            const { data } = await supabase.from('participants').select('*').eq('event_id', eventData.id);
-            setParticipants(data || []);
-          }
-        )
-        .subscribe();
-
-      return () => {
-        supabase.removeChannel(channel);
-      };
+    } catch {
+      setAuthError('Failed to load');
+      setLoading(false);
     }
+  }, [slug]);
 
-    load();
-  }, [slug, token]);
+  useEffect(() => {
+    if (adminToken === null) return; // hash not yet read
+    if (!adminToken) {
+      setAuthError('Missing admin token');
+      setLoading(false);
+      return;
+    }
+    loadAll(adminToken);
+  }, [adminToken, loadAll]);
+
+  // Realtime updates (uses anon key — read-only, narrowed columns)
+  useEffect(() => {
+    if (!event) return;
+    const channel = supabase
+      .channel(`admin-${event.id}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'availability', filter: `event_id=eq.${event.id}` },
+        async () => {
+          const { data } = await supabase
+            .from('availability')
+            .select('id, event_id, participant_id, slot_start, slot_end')
+            .eq('event_id', event.id);
+          setAvailability(data || []);
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'participants', filter: `event_id=eq.${event.id}` },
+        async () => {
+          // Note: anon key cannot read email; admin viewer reloads via API for fresh email data.
+          if (!adminToken) return;
+          const res = await fetch('/api/events/admin', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'load', slug, adminToken }),
+          });
+          if (res.ok) {
+            const d = await res.json();
+            setParticipants(d.participants);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [event, adminToken, slug]);
 
   async function handleSelectSlot(slotStart: string, slotEnd: string) {
-    if (!event || selecting) return;
+    if (!event || !adminToken || selecting) return;
 
     const timeDisplay = event.granularity === 'daily'
       ? new Date(slotStart).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
       : formatUTCInTimezone(slotStart, event.timezone);
-    const confirmMsg = `Select this time?\n${timeDisplay}`;
 
-    if (!confirm(confirmMsg)) return;
+    if (!confirm(`Select this time?\n${timeDisplay}`)) return;
 
     setSelecting(true);
-
     try {
-      // Update event with selected slot
-      const { error } = await supabase
-        .from('events')
-        .update({
-          selected_slot: { start: slotStart, end: slotEnd },
-        })
-        .eq('id', event.id);
+      const res = await fetch('/api/events/admin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'select_slot', slug, adminToken, slotStart, slotEnd }),
+      });
+      if (!res.ok) throw new Error('Failed to select slot');
 
-      if (error) throw error;
-
-      // Notify participants
       setNotifying(true);
       await fetch('/api/notify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           type: 'time_selected',
-          eventId: event.id,
+          eventSlug: slug,
+          adminToken,
           slotStart,
           slotEnd,
         }),
       });
 
-      // Update local state
       setEvent({ ...event, selected_slot: { start: slotStart, end: slotEnd } });
     } catch {
       alert('Failed to select time. Please try again.');
@@ -134,12 +165,12 @@ function AdminContent() {
     );
   }
 
-  if (!authorized || !event) {
+  if (authError || !event) {
     return (
       <div className="min-h-screen flex items-center justify-center px-4">
         <div className="text-center">
           <h1 className="text-xl font-bold text-gray-900 mb-2">Not Authorized</h1>
-          <p className="text-gray-500">Invalid or missing admin token.</p>
+          <p className="text-gray-500">{authError || 'Invalid or missing admin token.'}</p>
         </div>
       </div>
     );
@@ -151,17 +182,13 @@ function AdminContent() {
     <main className="min-h-screen pb-8">
       <div className="bg-white border-b border-gray-200 px-4 py-4">
         <div className="flex items-center gap-2 mb-1">
-          <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium">
-            Admin
-          </span>
+          <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium">Admin</span>
           <span className="text-xs text-gray-400">
             {participants.length} participant{participants.length !== 1 ? 's' : ''}
           </span>
         </div>
         <h1 className="text-xl font-bold text-gray-900">{event.name}</h1>
-        {event.description && (
-          <p className="text-sm text-gray-500 mt-1">{event.description}</p>
-        )}
+        {event.description && (<p className="text-sm text-gray-500 mt-1">{event.description}</p>)}
       </div>
 
       {selecting && (
@@ -179,9 +206,7 @@ function AdminContent() {
           <p className="text-green-700 font-bold">
             {event.granularity === 'daily'
               ? new Date(selectedSlot.start).toLocaleDateString('en-US', {
-                  weekday: 'long',
-                  month: 'long',
-                  day: 'numeric',
+                  weekday: 'long', month: 'long', day: 'numeric',
                 })
               : formatUTCInTimezone(selectedSlot.start, event.timezone)}
           </p>
@@ -213,21 +238,15 @@ function AdminContent() {
           onSelectSlot={selectedSlot ? undefined : handleSelectSlot}
         />
 
-        {/* Participant list */}
         {participants.length > 0 && (
           <div className="mt-6">
             <h3 className="text-sm font-medium text-gray-700 mb-2">Participants</h3>
             <div className="space-y-2">
               {participants.map((p) => (
-                <div
-                  key={p.id}
-                  className="flex items-center justify-between bg-white border border-gray-200 rounded-xl px-4 py-3"
-                >
+                <div key={p.id} className="flex items-center justify-between bg-white border border-gray-200 rounded-xl px-4 py-3">
                   <div>
                     <span className="font-medium text-gray-900">{p.name}</span>
-                    {p.email && (
-                      <span className="text-xs text-gray-400 ml-2">{p.email}</span>
-                    )}
+                    {p.email && (<span className="text-xs text-gray-400 ml-2">{p.email}</span>)}
                   </div>
                   <span className="text-xs text-gray-400">
                     {p.created_at ? new Date(p.created_at).toLocaleDateString() : ''}
@@ -239,13 +258,5 @@ function AdminContent() {
         )}
       </div>
     </main>
-  );
-}
-
-export default function AdminPage() {
-  return (
-    <Suspense fallback={<div className="min-h-screen flex items-center justify-center text-gray-400">Loading...</div>}>
-      <AdminContent />
-    </Suspense>
   );
 }
