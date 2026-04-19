@@ -34,6 +34,17 @@ export default function SignupParticipantPage() {
       return;
     }
 
+    if (signupData.type === 'mealtrain') {
+      // Mealtrain rows have their own UI at /mealtrain/[slug]
+      if (typeof window !== 'undefined') {
+        window.location.replace(`/mealtrain/${slug}`);
+        return;
+      }
+      setError('This link is a meal train — try /mealtrain/' + slug);
+      setLoading(false);
+      return;
+    }
+
     setSignup(signupData);
 
     const { data: itemsData } = await supabase

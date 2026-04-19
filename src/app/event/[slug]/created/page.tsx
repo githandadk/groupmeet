@@ -1,19 +1,20 @@
 'use client';
 
-import { useSearchParams, useParams } from 'next/navigation';
-import { useState, useEffect, Suspense } from 'react';
+import { useParams } from 'next/navigation';
+import { useState, useEffect } from 'react';
 
-function CreatedContent() {
+export default function CreatedPage() {
   const params = useParams();
-  const searchParams = useSearchParams();
   const slug = params.slug as string;
-  const adminToken = searchParams.get('admin');
+  const [adminToken, setAdminToken] = useState('');
   const [copied, setCopied] = useState(false);
   const [copiedAdmin, setCopiedAdmin] = useState(false);
   const [appUrl, setAppUrl] = useState('');
 
   useEffect(() => {
     setAppUrl(window.location.origin);
+    const hash = typeof window !== 'undefined' ? window.location.hash.replace(/^#/, '') : '';
+    setAdminToken(new URLSearchParams(hash).get('token') || '');
   }, []);
 
   const shareLink = `${appUrl}/event/${slug}`;
@@ -108,13 +109,5 @@ function CreatedContent() {
         </div>
       </div>
     </main>
-  );
-}
-
-export default function CreatedPage() {
-  return (
-    <Suspense fallback={<div className="min-h-screen flex items-center justify-center text-gray-400">Loading...</div>}>
-      <CreatedContent />
-    </Suspense>
   );
 }

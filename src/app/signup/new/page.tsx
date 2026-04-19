@@ -156,7 +156,7 @@ function NewSignupForm() {
       }
 
       const data = await res.json();
-      router.push(`/signup/${data.slug}/created?admin=${data.adminToken}`);
+      router.push(`/signup/${data.slug}/created#token=${data.adminToken}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong');
     } finally {

@@ -151,8 +151,9 @@ export default function SuperAdminPage() {
 
   const appUrl = typeof window !== 'undefined' ? window.location.origin : '';
 
-  function adminPath(kind: 'event' | 'signup' | 'poll', slug: string, token: string): string {
-    return `${appUrl}/${kind === 'event' ? 'event' : kind === 'poll' ? 'poll' : 'signup'}/${slug}/admin#token=${token}`;
+  function adminPath(kind: 'event' | 'signup' | 'mealtrain' | 'poll', slug: string, token: string): string {
+    const base = kind === 'event' ? 'event' : kind === 'poll' ? 'poll' : kind === 'mealtrain' ? 'mealtrain' : 'signup';
+    return `${appUrl}/${base}/${slug}/admin#token=${token}`;
   }
 
   if (loading) {
@@ -277,7 +278,7 @@ export default function SuperAdminPage() {
                       {signup.claim_count} claim{signup.claim_count !== 1 ? 's' : ''}
                     </div>
                     <div className="mt-2 flex flex-wrap gap-2">
-                      <a href={adminPath('signup', signup.slug, signup.admin_token)} target="_blank" rel="noopener noreferrer" className="text-xs text-indigo-500 hover:text-indigo-600 font-medium">Admin Link</a>
+                      <a href={adminPath(signup.type === 'mealtrain' ? 'mealtrain' : 'signup', signup.slug, signup.admin_token)} target="_blank" rel="noopener noreferrer" className="text-xs text-indigo-500 hover:text-indigo-600 font-medium">Admin Link</a>
                       <a href={`${appUrl}/${signup.type === 'mealtrain' ? 'mealtrain' : 'signup'}/${signup.slug}`} target="_blank" rel="noopener noreferrer" className="text-xs text-gray-500 hover:text-gray-600 font-medium">Participant Link</a>
                     </div>
                   </div>

@@ -1,16 +1,22 @@
 'use client';
 
-import { useState, useEffect, Suspense } from 'react';
-import { useParams, useSearchParams } from 'next/navigation';
+import { useState, useEffect } from 'react';
+import { useParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase/client';
 import type { Signup } from '@/types/database';
 
-function CreatedContent({ slug }: { slug: string }) {
-  const searchParams = useSearchParams();
-  const adminToken = searchParams.get('admin') || '';
+export default function SignupCreatedPage() {
+  const params = useParams();
+  const slug = params.slug as string;
+  const [adminToken, setAdminToken] = useState('');
   const [signup, setSignup] = useState<Omit<Signup, 'admin_token'> | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const hash = typeof window !== 'undefined' ? window.location.hash.replace(/^#/, '') : '';
+    setAdminToken(new URLSearchParams(hash).get('token') || '');
+  }, []);
 
   useEffect(() => {
     supabase
@@ -128,23 +134,5 @@ function CreatedContent({ slug }: { slug: string }) {
         </div>
       </div>
     </main>
-  );
-}
-
-function CreatedPageInner() {
-  const params = useParams();
-  const slug = params.slug as string;
-  return <CreatedContent slug={slug} />;
-}
-
-export default function SignupCreatedPage() {
-  return (
-    <Suspense fallback={
-      <main className="min-h-screen flex items-center justify-center">
-        <p className="text-gray-400">Loading...</p>
-      </main>
-    }>
-      <CreatedPageInner />
-    </Suspense>
   );
 }

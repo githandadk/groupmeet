@@ -66,7 +66,7 @@ export default function NewEventPage() {
       }
 
       const data = await res.json();
-      router.push(`/event/${data.slug}/created?admin=${data.adminToken}`);
+      router.push(`/event/${data.slug}/created#token=${data.adminToken}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong');
     } finally {
