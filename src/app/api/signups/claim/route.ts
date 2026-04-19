@@ -45,6 +45,7 @@ export async function POST(request: NextRequest) {
           body: JSON.stringify({
             type: 'new_signup_claim',
             signupId,
+            itemId,
             participantName: participantName.trim(),
           }),
         }).catch(() => {});

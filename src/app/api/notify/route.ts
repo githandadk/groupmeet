@@ -3,15 +3,47 @@ import { createSupabaseAdmin } from '@/lib/supabase/server';
 import { sendNewResponseEmail, sendTimeSelectedEmail, sendNewClaimEmail } from '@/lib/email';
 import { requireAdmin, AdminAuthError } from '@/lib/auth';
 
+const RATE_WINDOW_MS = 60_000;
+const RATE_MAX = 5;
+const ipBuckets = new Map<string, number[]>();
+
+function rateLimit(ip: string): boolean {
+  const now = Date.now();
+  const bucket = (ipBuckets.get(ip) || []).filter((t) => now - t < RATE_WINDOW_MS);
+  if (bucket.length >= RATE_MAX) {
+    ipBuckets.set(ip, bucket);
+    return false;
+  }
+  bucket.push(now);
+  ipBuckets.set(ip, bucket);
+  if (ipBuckets.size > 1000) {
+    ipBuckets.forEach((v, k) => {
+      const filtered = v.filter((t: number) => now - t < RATE_WINDOW_MS);
+      if (filtered.length === 0) ipBuckets.delete(k); else ipBuckets.set(k, filtered);
+    });
+  }
+  return true;
+}
+
+function getClientIp(request: NextRequest): string {
+  return (
+    request.headers.get('x-forwarded-for')?.split(',')[0].trim() ||
+    request.headers.get('x-real-ip') ||
+    'unknown'
+  );
+}
+
 export async function POST(request: NextRequest) {
+  if (!rateLimit(getClientIp(request))) {
+    return NextResponse.json({ error: 'Rate limited' }, { status: 429 });
+  }
   try {
     const body = await request.json();
     const supabaseAdmin = createSupabaseAdmin();
 
     if (body.type === 'new_response') {
-      // Internal-only notification triggered by participant submit. Trust the request:
-      // it does not expose any data and it cannot be used to spam arbitrary recipients
-      // (the recipient comes from the row we look up server-side).
+      // Rate-limited; recipient comes from server-side row lookup so this cannot be
+      // used to send arbitrary content to arbitrary addresses.
       const { eventId, participantName } = body;
 
       const { data: event } = await supabaseAdmin
@@ -78,9 +110,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (body.type === 'new_signup_claim') {
-      // Internal-only notification triggered by claim API. The claim itself is rate-limited
-      // upstream (Phase 4.6) and the recipient comes from the server-side row lookup.
-      const { signupId, participantName } = body;
+      const { signupId, itemId, participantName } = body;
 
       const { data: signup } = await supabaseAdmin
         .from('signups')
@@ -92,21 +122,12 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ ok: true });
       }
 
-      const { data: recentClaim } = await supabaseAdmin
-        .from('signup_claims')
-        .select('item_id')
-        .eq('signup_id', signupId)
-        .eq('participant_name', participantName)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single();
-
       let itemLabel = 'an item';
-      if (recentClaim) {
+      if (itemId) {
         const { data: item } = await supabaseAdmin
           .from('signup_items')
           .select('label')
-          .eq('id', recentClaim.item_id)
+          .eq('id', itemId)
           .single();
         if (item) itemLabel = item.label;
       }
